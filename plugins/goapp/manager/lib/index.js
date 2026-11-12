@@ -7,6 +7,7 @@
 // registry still answers over `ctx.dshGo`-less calls to `apply` (tests).
 import { load, noteSession, remove as removeEntry, save, setEnabled, upsert } from './registry.js'
 import { scanInbox } from './import.js'
+import { loadStore } from './store.js'
 import { goappData, goappView, words } from './view.js'
 
 export const name = 'dsh-go-goapp'
@@ -27,7 +28,7 @@ export function apply(ctx, options = {}) {
     ctx.dshGo.panel('goapps', {
       view: (scope, caps) => goappView(scope, caps),
       data: (scope, emit) => {
-        emit(goappData(read()))
+        emit(goappData(read(), loadStore(env)))
         return () => {}
       },
       actions: {
@@ -67,6 +68,20 @@ export function apply(ctx, options = {}) {
         },
 
         refresh: () => [{ type: 'refresh' }],
+
+        /** Install a store entry that is already unpacked in the inbox. */
+        install: (scope, event) => {
+          const w = words(event?.locale)
+          const id = idOf(event)
+          if (id === '') return []
+          const local = scanInbox(env).find((entry) => entry.id === id)
+          if (local === undefined) return [{ type: 'toast', text: `${w.notDownloaded}: ${id}` }]
+          write(upsert(read(), local))
+          return [
+            { type: 'toast', text: `${w.installed_one} ${local.name}` },
+            { type: 'refresh' },
+          ]
+        },
 
         /** Register every goapp package dropped into $DSH_HOME/goapps/inbox. */
         import: (scope, event) => {
