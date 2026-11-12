@@ -91,20 +91,38 @@ jobs:
           fi
           ./gradlew --version | head -n 5
 
+      # Runner logs are not readable from every network, so a failure also posts its
+      # tail as a commit comment, which the API serves.
       - name: Build the Linux runtime
         env:
           FLAVOR: ${{ inputs.flavor || 'arm64' }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           abi=$([ "$FLAVOR" = "x64" ] && echo x86_64 || echo arm64-v8a)
-          bash runtime/build-runtime.sh "$abi"
+          status=0
+          bash runtime/build-runtime.sh "$abi" 2>&1 | tee runtime-build.log || status=$?
+          if [ "$status" -ne 0 ]; then
+            { echo "runtime build failed: exit $status"; tail -n 150 runtime-build.log; } > /tmp/msg.txt
+            gh api -X POST "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" \
+              -F "body=@/tmp/msg.txt" >/dev/null 2>&1 || true
+            exit "$status"
+          fi
 
       - name: Build the APK
         env:
           FLAVOR: ${{ inputs.flavor || 'arm64' }}
           MODE: ${{ inputs.mode || 'release' }}
           DSH_BETA_TOKEN_FILE: ''
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          bash tooling/build-apk.sh -f "$FLAVOR" --"$MODE" --keep-daemon
+          status=0
+          bash tooling/build-apk.sh -f "$FLAVOR" --"$MODE" --keep-daemon 2>&1 | tee apk-build.log || status=$?
+          if [ "$status" -ne 0 ]; then
+            { echo "apk build failed: exit $status"; tail -n 150 apk-build.log; } > /tmp/msg.txt
+            gh api -X POST "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" \
+              -F "body=@/tmp/msg.txt" >/dev/null 2>&1 || true
+            exit "$status"
+          fi
 
       - name: Collect artifacts
         id: collect
