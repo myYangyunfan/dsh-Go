@@ -683,7 +683,7 @@ Future<void> _runEffect(
     case OpenEffect(:final page?):
       await openNativePage(context, ref, page, sessionId: sessionId);
     case OpenEffect(:final panel?):
-      final target = plugin.panels.where((p) => p.id == panel).firstOrNull;
+      final target = _panelNamed(ref, plugin, panel);
       if (target == null) {
         issues.add(NativeIssue('/effects', l10n.plugslotsIssueUnknownPage('panel:$panel')));
       } else {
@@ -705,6 +705,22 @@ Future<void> _runEffect(
     case OpenEffect() || RefreshEffect() || PatchEffect():
       break;
   }
+}
+
+/// Which panel a `{panel: …}` effect means. A bare id stays inside [plugin];
+/// `<package>/<id>` reaches another plugin's panel through the registry, which
+/// is what lets a store or launcher open the app it just started. A disabled
+/// plugin has no panel (the registry lists switched-on ones only).
+NativePanel? _panelNamed(WidgetRef ref, NativePlugin plugin, String name) {
+  final own = plugin.panels.where((p) => p.id == name).firstOrNull;
+  if (own != null) return own;
+  // Package names may be scoped (`@scope/name`), so the id is what follows the
+  // last slash, not the first.
+  final slash = name.lastIndexOf('/');
+  if (slash <= 0 || slash == name.length - 1) return null;
+  final package = name.substring(0, slash);
+  final id = name.substring(slash + 1);
+  return ref.read(nativePanelsProvider).where((p) => p.package == package && p.id == id).firstOrNull;
 }
 
 // ── Shared with ui.json ──────────────────────────────────────────────────────
