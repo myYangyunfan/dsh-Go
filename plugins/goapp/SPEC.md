@@ -124,6 +124,20 @@ P2 起必须改 fork 的 Dart/Kotlin，且**必须真机验证**（CONTRIBUTING 
 - 结论：管理器的 `open` 动作打不开别的 goapp 的面板。最小改法是让 `panel` 允许
   `"<package>/<id>"` 形式，解析时改走插件注册表按 package 取面板。
 
+**已完成（fork `main`）**：`app/lib/ui/plugins/native/native_taps.dart` 新增
+`_panelNamed(ref, plugin, name)` —— 先在当前插件里按 id 找，找不到再按**最后一个**斜杠
+拆成 `package` / `id`，从 `nativePanelsProvider`（只含已启用插件）里取；包名可能带 scope
+（`@scope/name`），所以不能用第一个斜杠。解析层 `native_effects.dart` 不需要改：它本来就把
+`{panel: "<任意字符串>"}` 原样交给执行层。管理器侧 `open` 现在返回
+`{ type: 'open', panel: '<package>/<id>' }`（`panelRef()` 由注册表条目的 `package` 与
+`entry: "panel:<id>"` 拼出），拿不到原生面板时才退回 toast + callout。
+
+**goapp 标记放在 `package.json` 顶层的 `dshGoGoapp`，不放 `dshGo.goapp`**：桥对 `dshGo`
+里的未知键只是忽略并**记一条警告**，而 `check.mjs` 会把每个未知键报成 issue —— 放在 `dshGo`
+里等于让每个 goapp 永久带一条警告。`readPackage()` 先读 `dshGoGoapp`，再兼容旧的
+`dshGo.goapp`。注册表条目相应多了 `package` 与 `entry` 两个字段（`registry.js` 的 `parse`
+原来把它们过滤掉了，这两个字段是跨包打开面板所必需的）。
+
 **全屏宿主已经存在，不用新写**：
 
 - `app/lib/ui/plugins/native/native_panel.dart:155` 的 `NativePanelPage`，
