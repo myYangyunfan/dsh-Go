@@ -202,5 +202,8 @@ P2 起必须改 fork 的 Dart/Kotlin，且**必须真机验证**（CONTRIBUTING 
 没有新增 ARB —— 本机没有 Flutter SDK，跑不了 `l10n_merge.py` 的 `gen-l10n` 这一步，
 手写生成物是硬规则禁止的。
 
-**还没做**：goapp 被关掉或删掉时连带清掉它的会话——需要接上插件启停的钩子，
-`GoappSessionsStore.forget` 现在只有会话面板这一个调用点；以及桌面图标/会话切换的真机验证。
+**卸载连带清理（已做）**：插件被**删除**时 `InstalledPluginsController.remove()`
+（`app/lib/state/plugins/installed_plugins.dart`）在 `result.succeeded` 之后调
+`GoappSessionsStore.forgetPackage(bundle.name)`，把这个 goapp 的会话与默认会话一起清掉——
+删掉的插件已经打不开，id 只有 App 知道，留着是纯泄漏。**禁用不清**：那是可撤销的操作，
+再打开还要回到原来的会话。剩下的只有真机验证。
