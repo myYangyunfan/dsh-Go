@@ -11,7 +11,7 @@ import { download, folderFor, readTar, sha256, unpackTarGz } from '../lib/downlo
 import { inboxPath, scanInbox } from '../lib/import.js'
 import { apply } from '../lib/index.js'
 import { empty, load, save, upsert } from '../lib/registry.js'
-import { storePath } from '../lib/store.js'
+import { loadStore, storePath } from '../lib/store.js'
 
 function tempEnv() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'goapp-dl-'))
@@ -135,6 +135,15 @@ test('unpackTarGz rejects anything that is not a gzip tar', () => {
 test('readTar stops at the end-of-archive block', () => {
   const payload = zlib.gunzipSync(tarGz({ 'a.txt': 'x' }))
   assert.deepEqual(readTar(payload).map((file) => file.name), ['a.txt'])
+})
+
+test('the bundled store entry is downloadable and pinned', async () => {
+  const env = tempEnv()
+  const entry = loadStore(env).goapps.find((goapp) => goapp.id === 'word')
+  assert.ok(entry !== undefined)
+  assert.match(entry.url, /^https:\/\//)
+  assert.match(entry.sha256, /^[0-9a-f]{64}$/)
+  assert.equal(folderFor(entry), 'goapp-demo-word')
 })
 
 function fakeCtx() {
