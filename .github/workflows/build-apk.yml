@@ -126,15 +126,28 @@ jobs:
 
       - name: Collect artifacts
         id: collect
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           flavor=${{ inputs.flavor || 'arm64' }}
           mode=${{ inputs.mode || 'release' }}
-          apk="app/build/app/outputs/flutter-apk/app-${flavor}-${mode}.apk"
-          test -f "$apk"
-          version=$(sed -n 's/^version:[[:space:]]*\([^+[:space:]]*\).*/\1/p' app/pubspec.yaml)
+          dir=app/build/app/outputs/flutter-apk
+          ls -l "$dir" > /tmp/ls.txt 2>&1 || true
+          apk="$dir/app-${flavor}-${mode}.apk"
+          if [ ! -f "$apk" ]; then
+            apk=$(ls "$dir"/app-*.apk 2>/dev/null | head -n 1)
+          fi
+          if [ -z "${apk:-}" ] || [ ! -f "$apk" ]; then
+            { echo "no APK produced"; cat /tmp/ls.txt; } > /tmp/msg.txt
+            gh api -X POST "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" \
+              -F "body=@/tmp/msg.txt" >/dev/null 2>&1 || true
+            exit 1
+          fi
+          version=$(sed -n 's/^version:[[:space:]]*\([^+[:space:]]*\).*/\1/p' app/pubspec.yaml | head -n 1)
           name="dsh-go-${version}-${flavor}.apk"
           cp "$apk" "$name"
           sha256sum "$name" > SHA256SUMS.txt
+          ls -l "$name" | tee -a /tmp/ls.txt
           echo "name=$name" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
