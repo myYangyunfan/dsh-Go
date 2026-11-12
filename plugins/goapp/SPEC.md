@@ -47,8 +47,10 @@ my-goapp/
 
 | 入口 | 做法 | 状态 |
 |---|---|---|
-| 商店 | 读 market 索引 JSON，下载包 | ⛔ 未接；管理器面板已留入口位 |
-| 本地导入 | 目录 / zip，落到 `~/.dsh/goapps/<id>/` | 半实现：注册表能写，导入动作待接 `pickFile` |
+| 商店 | 读 market 索引 JSON；条目带 `url` + `sha256` 时下载 `.tar.gz`、校验、解包进 inbox | 已实现（`manager/lib/download.js`） |
+| 本地导入 | 目录落进 `~/.dsh/goapps/inbox/`，管理器扫描登记 | 已实现（`manager/lib/import.js`） |
+
+商店条目没有 `url` 时 `install` 退化为「登记 inbox 里已有的那份」，不会假装下载。`sha256` 在给了 `url` 时是**必需**的：没有校验就写可执行界面代码是供应链漏洞，缺校验、校验不符、非 2xx、非 tar.gz、路径越界（`..`、绝对路径）一律拒绝并给出稳定原因码（`no-checksum` / `checksum` / `http-<status>` / `not-tar-gz` / `unsafe-path` / `too-large` / `network`）。解包先写 inbox 下的临时目录再 `rename`，中断不会留下半成品被 `scanInbox` 读到；大小上限 32 MiB。
 
 两条路都收敛为一次 **注册**：写入注册表 + 挂到 profile（`dsh plugin add` 由引擎侧完成，管理器只负责登记与呈现）。
 
@@ -167,8 +169,7 @@ P2 起必须改 fork 的 Dart/Kotlin，且**必须真机验证**（CONTRIBUTING 
 - `app/lib/links/page_links.dart` 新增 `panelLinkTarget(uri)`；`registerPageLinks` 先查面板
   链接再查页面链接（页面链接要求恰好一段，两者不冲突）。
 - `app/lib/ui/plugins/native/goapp_page.dart` 新增 `GoappPanelPage`：`ref.watch(nativePanelsProvider)`
-  按 package+id 找面板，拿到就渲染 `NativePanelView`（外面是页面自己的 `AppPage`，
-  因为全屏 goapp 的顶栏要放会话按钮）；找不到显示「未知页面」而不是白屏。
+  按 package+id 找面板，拿到就渲染 `NativePanelPage`，找不到显示「未知页面」而不是白屏。
 - 于是任何能发出 `dshgo://` 的入口（链接、ADB `am start -a android.intent.action.VIEW -d ...`、
   浏览器「添加到主屏」）都能直达 goapp，**不需要经过桌面/HomeShell**。
 
@@ -180,30 +181,14 @@ P2 起必须改 fork 的 Dart/Kotlin，且**必须真机验证**（CONTRIBUTING 
 
 `app/lib/state/goapp_sessions.dart` 按 package 存两份东西：会话列表（新的在前，上限
 `goappSessionLimit = 20`）和「下次默认打开哪个」。存在 `SharedPreferences` 的
-`goapp_sessions_v1` 里，每次改动都按顺序落盘（写入串在一条 future 链上，没有防抖定时器），
-读不出来就当空——一份坏掉的偏好不该让 goapp 打不开。
+`goapp_sessions_v1` 里，写入按 400ms 防抖，读不出来就当空——一份坏掉的偏好不该让 goapp 打不开。
 
-- `GoappPanelPage` 在 `initState` 里 `resolve(package, mint)` 一次，结果作为
-  `NativePanelView(sessionId:)` 的作用域。所以点桌面图标进来的是**这个 goapp 上次那场对话**，
+- `GoappPanelPage` 在 `initState` 里 `resolve(package, mint)` 一次，结果交给
+  `NativePanelPage(sessionId:)`。所以点桌面图标进来的是**这个 goapp 上次那场对话**，
   而不是聊天页停在哪儿就跟到哪儿。
-- `mintGoappSession()` 是顶层函数，store 里没有时钟也没有随机数：测试才能断言具体 id。
+- `mint()` 由调用方给，store 里没有时钟也没有随机数：测试才能断言具体 id。
 - 删除默认会话时回落到最新的一场；删光了下次打开就新起一场，不会「恢复一个已经被删的东西」。
 
-**goapp 内的会话管理（已做）**：页面自己的 `AppPage` 顶栏有一个 `history` 按钮
-（`IconButton` 的 key 是 `goapp-conversations`），弹出的 `_GoappConversations`
-列出这个 goapp 的会话：
-
-- 新建：`startNew(package, mintGoappSession())` 并切过去；
-- 切换：`select` 之后页面换 key（`goapp|<package>|<session>`）重建，`nativeSurfaceProvider`
-  是 `autoDispose`，旧会话的界面状态随之释放——这正是「死会话不占内存」的落点；
-- 删除：`forget`；删的是当前这场时，回落到最新一场（`resolve`）而不是留在空白页。
-
-界面文案全部复用既有键（`shellChatList` / `commonNewChat` / `commonDelete` / `commonMonthDay`），
-没有新增 ARB —— 本机没有 Flutter SDK，跑不了 `l10n_merge.py` 的 `gen-l10n` 这一步，
-手写生成物是硬规则禁止的。
-
-**卸载连带清理（已做）**：插件被**删除**时 `InstalledPluginsController.remove()`
-（`app/lib/state/plugins/installed_plugins.dart`）在 `result.succeeded` 之后调
-`GoappSessionsStore.forgetPackage(bundle.name)`，把这个 goapp 的会话与默认会话一起清掉——
-删掉的插件已经打不开，id 只有 App 知道，留着是纯泄漏。**禁用不清**：那是可撤销的操作，
-再打开还要回到原来的会话。剩下的只有真机验证。
+**还没做**：goapp 内的会话管理界面（新建/切换/删除），以及 goapp 被关掉或删掉时
+连带清掉它的会话——后者需要接上插件启停的钩子，现在 `GoappSessions` 只提供
+`forget` 这一层能力，没有调用点。
