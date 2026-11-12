@@ -519,6 +519,7 @@ NativePlugin _plugin(DshGoPlugin p, Set<String> features) {
               if (where == DshGoPanel.sessionTab ||
                   where == DshGoPanel.features ||
                   where == DshGoPanel.chatPanel ||
+                  where == DshGoPanel.goapp ||
                   where == DshGoPanel.pluginPage)
                 where,
           }
