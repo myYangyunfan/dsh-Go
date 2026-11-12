@@ -91,5 +91,5 @@ Uint8List workshopCompanionPreviewZip((Uint8List, WorkshopPreviewInput) input) {
   if (encoded.length > workshopArchiveBytes) {
     workshopInvalid('workshop_body_too_large');
   }
-  return encoded;
+  return Uint8List.fromList(encoded);
 }

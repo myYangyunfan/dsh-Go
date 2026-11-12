@@ -35,7 +35,7 @@ class WorkshopPublicationInput {
   };
 
   WorkshopPublication publication(String kind, {String? previewSource}) => WorkshopPublication({
-    ...declaration(kind), if (previewSource != null) 'previewSource': previewSource,
+    ...declaration(kind), 'previewSource': ?previewSource,
   });
 
   WorkshopPublicationInput copyWith({String? id, String? version, String? minApp,
