@@ -99,9 +99,8 @@ class GoappSessionsStore {
 
   /// Starts a conversation and makes it the one [package] opens next time.
   void startNew(String package, String id) {
-    final list = [GoappSession(id: id, startedAt: _clock()), ...?_sessions[package]]
-      ..removeWhere((s) => s.id == id);
-    _sessions[package] = list.take(goappSessionLimit).toList();
+    final previous = (_sessions[package] ?? const <GoappSession>[]).where((s) => s.id != id);
+    _sessions[package] = [GoappSession(id: id, startedAt: _clock()), ...previous].take(goappSessionLimit).toList();
     _current[package] = id;
     _save();
   }
