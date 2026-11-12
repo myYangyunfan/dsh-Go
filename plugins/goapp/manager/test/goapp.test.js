@@ -7,6 +7,7 @@ import test from 'node:test'
 
 import { empty, load, noteSession, parse, registryPath, remove, save, setEnabled, upsert } from '../lib/registry.js'
 import { inboxPath, readPackage, scanInbox } from '../lib/import.js'
+import { apply } from '../lib/index.js'
 
 function tempEnv() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'goapp-'))
@@ -91,9 +92,67 @@ test('readPackage needs dshGo.goapp.id', () => {
   const entry = readPackage(dir, 42)
   assert.equal(entry.id, 'w')
   assert.equal(entry.name, '词')
+  assert.equal(entry.package, 'ok')
   assert.equal(entry.kind, 'web')
   assert.equal(entry.entry, 'web/index.html')
   assert.equal(entry.installedAt, 42)
+})
+
+/** A ctx that records the panel the host half declares. */
+function fakeCtx() {
+  const panels = {}
+  const ctx = {
+    inject: (deps, cb) => {
+      assert.deepEqual(deps, ['dshGo'])
+      cb({ dshGo: { panel: (id, spec) => { panels[id] = spec } } })
+    },
+  }
+  return { ctx, panels }
+}
+
+test('open reaches another package’s panel through a package/id ref', () => {
+  const env = tempEnv()
+  save(
+    upsert(empty(), {
+      id: 'word',
+      name: '词',
+      version: '0.1.0',
+      package: 'goapp-demo-word',
+      kind: 'native',
+      entry: 'panel:word',
+      enabled: true,
+      installedAt: 1,
+      sessions: [],
+    }),
+    env,
+  )
+  const { ctx, panels } = fakeCtx()
+  apply(ctx, { env })
+  const effects = panels.goapps.actions.open(null, { id: 'word', locale: 'zh' })
+  assert.deepEqual(effects.at(-1), { type: 'open', panel: 'goapp-demo-word/word' })
+})
+
+test('open falls back to a callout when the goapp has no native panel', () => {
+  const env = tempEnv()
+  save(
+    upsert(empty(), {
+      id: 'webapp',
+      name: '网页',
+      version: '0.1.0',
+      package: 'goapp-web',
+      kind: 'web',
+      entry: 'web/index.html',
+      enabled: true,
+      installedAt: 1,
+      sessions: [],
+    }),
+    env,
+  )
+  const { ctx, panels } = fakeCtx()
+  apply(ctx, { env })
+  const effects = panels.goapps.actions.open(null, { id: 'webapp', locale: 'zh' })
+  assert.equal(effects.some((e) => e.type === 'open'), false)
+  assert.equal(effects.at(-1).type, 'callout')
 })
 
 test('scanInbox skips files and non-goapp folders', () => {
