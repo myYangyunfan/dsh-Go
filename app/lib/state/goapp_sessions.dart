@@ -15,7 +15,7 @@ const goappSessionLimit = 20;
 ///
 /// [id] is the App's own scope id — `NativePanelView` keys a panel's data by
 /// `(panel, session)` — not a DSH session id: a goapp is plugin UI, so the Host
-/// never learns these and deleting one here cannot touch the Host's sessions.
+/// never learns these and dropping one here cannot touch the Host's sessions.
 class GoappSession {
   const GoappSession({required this.id, required this.startedAt});
 
@@ -32,92 +32,64 @@ class GoappSession {
   String toString() => 'GoappSession($id)';
 }
 
-class GoappSessionsState {
-  const GoappSessionsState({this.sessions = const {}, this.current = const {}, this.loaded = false});
-
-  /// Newest first, by goapp package.
-  final Map<String, List<GoappSession>> sessions;
-
-  /// The conversation each goapp opens by default.
-  final Map<String, String> current;
-
-  /// The saved conversations are in (they arrive a moment after launch).
-  final bool loaded;
-
-  List<GoappSession> of(String package) => sessions[package] ?? const [];
-
-  String? currentOf(String package) => current[package];
-}
-
 /// The conversations of every goapp, kept apart from the chat list.
 ///
 /// A goapp opening from a launcher icon must not resume whatever conversation
-/// the chat tab was left in, so each goapp owns a list and a default.
-class GoappSessions extends Notifier<GoappSessionsState> {
+/// the chat tab was left in, so each goapp owns a list and a default. A plain
+/// object rather than a `Notifier` on purpose: opening a goapp is a read that
+/// must not depend on who is listening, and the whole list is small enough to
+/// write on every change.
+class GoappSessionsStore {
+  GoappSessionsStore({DateTime Function()? clock}) : _clock = clock ?? DateTime.now;
+
   static const preferenceKey = 'goapp_sessions_v1';
 
-  Timer? _write;
+  final DateTime Function() _clock;
+  final Map<String, List<GoappSession>> _sessions = {};
+  final Map<String, String> _current = {};
+  Future<void> _pending = Future<void>.value();
 
-  @override
-  GoappSessionsState build() {
-    // Flush instead of dropping the pending write: closing the page within the
-    // debounce window must not lose the conversation that was just started.
-    ref.onDispose(() {
-      _write?.cancel();
-      unawaited(_writeNow());
-    });
-    unawaited(_restore());
-    return const GoappSessionsState();
-  }
+  /// Newest first, by goapp package.
+  List<GoappSession> sessionsOf(String package) => List.unmodifiable(_sessions[package] ?? const []);
 
-  Future<void> _restore() async {
-    var restored = const <String, List<GoappSession>>{};
-    var current = const <String, String>{};
+  /// The conversation each goapp opens by default.
+  String? currentOf(String package) => _current[package];
+
+  /// The saved conversations are in. Failures leave the store empty: a broken
+  /// preference must not stop a goapp from opening.
+  Future<void> load() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final raw = prefs.getString(preferenceKey);
-      if (raw != null) {
-        final sessions = <String, List<GoappSession>>{};
-        final defaults = <String, String>{};
-        for (final MapEntry(:key, :value) in (jsonDecode(raw) as Map).entries) {
-          final package = key as String;
-          final list = [
-            for (final entry in (value['s'] as List? ?? const []))
-              GoappSession(
-                id: entry[0] as String,
-                startedAt: DateTime.fromMillisecondsSinceEpoch(entry[1] as int),
-              ),
-          ];
-          if (list.isNotEmpty) sessions[package] = list;
-          final chosen = value['c'] as String?;
-          if (chosen != null && list.any((s) => s.id == chosen)) defaults[package] = chosen;
-        }
-        restored = sessions;
-        current = defaults;
+      if (raw == null) return;
+      for (final MapEntry(:key, :value) in (jsonDecode(raw) as Map).entries) {
+        final package = key as String;
+        final list = [
+          for (final entry in (value['s'] as List? ?? const []))
+            GoappSession(
+              id: entry[0] as String,
+              startedAt: DateTime.fromMillisecondsSinceEpoch(entry[1] as int),
+            ),
+        ];
+        if (list.isEmpty) continue;
+        _sessions[package] = list.take(goappSessionLimit).toList();
+        final chosen = value['c'] as String?;
+        if (chosen != null && list.any((s) => s.id == chosen)) _current[package] = chosen;
       }
     } catch (_) {
-      // No preferences backend (tests) or an unreadable value: start empty.
+      _sessions.clear();
+      _current.clear();
     }
-    if (!ref.mounted) return;
-    // A conversation opened before the load finished wins over the saved one.
-    state = GoappSessionsState(
-      sessions: {
-        ...restored,
-        for (final MapEntry(:key, :value) in state.sessions.entries) key: value,
-      },
-      current: {...current, ...state.current},
-      loaded: true,
-    );
   }
 
   /// The conversation [package] opens now, minting one through [mint] when it
-  /// has none left. Callers pass the id, so this stays free of clocks.
+  /// has none left. Callers pass the id, so the store keeps no randomness.
   String resolve(String package, String Function() mint) {
-    final known = state.currentOf(package);
-    if (known != null && state.of(package).any((s) => s.id == known)) return known;
-    final existing = state.of(package);
+    final known = _current[package];
+    if (known != null && (_sessions[package] ?? const <GoappSession>[]).any((s) => s.id == known)) return known;
+    final existing = _sessions[package] ?? const <GoappSession>[];
     if (existing.isNotEmpty) {
-      _publish(package, existing, existing.first.id);
+      _current[package] = existing.first.id;
       return existing.first.id;
     }
     final id = mint();
@@ -126,68 +98,67 @@ class GoappSessions extends Notifier<GoappSessionsState> {
   }
 
   /// Starts a conversation and makes it the one [package] opens next time.
-  void startNew(String package, String id, {DateTime? now}) {
-    final list = [GoappSession(id: id, startedAt: now ?? DateTime.now()), ...state.of(package)]
+  void startNew(String package, String id) {
+    final list = [GoappSession(id: id, startedAt: _clock()), ...?_sessions[package]]
       ..removeWhere((s) => s.id == id);
-    _publish(package, list.take(goappSessionLimit).toList(), id);
+    _sessions[package] = list.take(goappSessionLimit).toList();
+    _current[package] = id;
+    _save();
   }
 
   /// Opens [id] again; an id this goapp does not keep is ignored.
   void select(String package, String id) {
-    if (!state.of(package).any((s) => s.id == id)) return;
-    _publish(package, state.of(package), id);
+    if (!(_sessions[package] ?? const []).any((s) => s.id == id)) return;
+    _current[package] = id;
+    _save();
   }
 
-  /// Drops [id]. When it was the default, the newest remaining one takes over,
+  /// Drops [id]. When it was the default the newest remaining one takes over,
   /// so opening the goapp next time lands somewhere real instead of a blank.
   void forget(String package, String id) {
-    final kept = state.of(package);
+    final kept = _sessions[package] ?? const <GoappSession>[];
     final list = kept.where((s) => s.id != id).toList();
     if (list.length == kept.length) return;
-    final next = state.currentOf(package) == id ? (list.isEmpty ? null : list.first.id) : state.currentOf(package);
-    _publish(package, list, next);
-  }
-
-  void _publish(String package, List<GoappSession> list, String? current) {
-    final sessions = {...state.sessions};
-    final defaults = {...state.current};
     if (list.isEmpty) {
-      sessions.remove(package);
-      defaults.remove(package);
+      _sessions.remove(package);
+      _current.remove(package);
     } else {
-      sessions[package] = list;
-      if (current == null) {
-        defaults.remove(package);
-      } else {
-        defaults[package] = current;
-      }
+      _sessions[package] = list;
+      if (_current[package] == id) _current[package] = list.first.id;
     }
-    state = GoappSessionsState(sessions: sessions, current: defaults, loaded: state.loaded);
-    _schedule();
+    _save();
   }
 
-  void _schedule() {
-    _write?.cancel();
-    _write = Timer(const Duration(milliseconds: 400), () => unawaited(_writeNow()));
-  }
+  /// Waits for the write that follows a change. Tests and the page's own
+  /// teardown use it; nothing else has to.
+  Future<void> flush() => _pending;
 
-  Future<void> _writeNow() async {
+  void _save() {
     final payload = <String, Object?>{
-      for (final MapEntry(:key, :value) in state.sessions.entries)
+      for (final MapEntry(:key, :value) in _sessions.entries)
         key: {
-          'c': ?state.current[key],
+          'c': ?_current[key],
           's': [
             for (final session in value) [session.id, session.startedAt.millisecondsSinceEpoch],
           ],
         },
     };
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(preferenceKey, jsonEncode(payload));
-    } catch (_) {
-      // Nothing to do: the list still works for this run.
-    }
+    final text = jsonEncode(payload);
+    _pending = _pending.then((_) async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(preferenceKey, text);
+      } catch (_) {
+        // The list still works for this run; the next change retries.
+      }
+    });
   }
 }
 
-final goappSessionsProvider = NotifierProvider<GoappSessions, GoappSessionsState>(GoappSessions.new);
+/// One store per container. Nothing here is reactive: a goapp resolves its
+/// conversation once when it opens.
+final goappSessionsProvider = Provider<GoappSessionsStore>((ref) {
+  final store = GoappSessionsStore();
+  unawaited(store.load());
+  return store;
+});
