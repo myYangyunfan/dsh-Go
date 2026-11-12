@@ -170,7 +170,7 @@ class GoappSessions extends Notifier<GoappSessionsState> {
     final payload = <String, Object?>{
       for (final MapEntry(:key, :value) in state.sessions.entries)
         key: {
-          if (state.current[key] case final current?) 'c': current,
+          'c': ?state.current[key],
           's': [
             for (final session in value) [session.id, session.startedAt.millisecondsSinceEpoch],
           ],
