@@ -64,7 +64,7 @@ export function effectiveLimits(overrides) {
 
 export const SURFACES = ["composer.actions", "message.actions", "composer.strip", "panels", "composer.tools", "session.actions", "turn.note"];
 export const PLACEMENT_PLUGIN = "plugin";
-export const PLACEMENTS = ["session.tab", "features", "chat.panel", PLACEMENT_PLUGIN];
+export const PLACEMENTS = ["session.tab", "features", "chat.panel", "goapp", PLACEMENT_PLUGIN];
 /** Only where the app says it draws them (`surfaces`): see placementFor in manifest.js. */
 export const NEGOTIATED_PLACEMENTS = [PLACEMENT_PLUGIN];
 export const PRESENTATIONS = ["page", "sheet"];
