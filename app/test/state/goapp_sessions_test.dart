@@ -113,4 +113,31 @@ void main() {
     expect(store.sessionsOf('pkg-a'), isEmpty);
     expect(store.currentOf('pkg-a'), isNull);
   });
+
+  test('removing a goapp drops its conversations, and only its own', () async {
+    final store = GoappSessionsStore();
+    store.startNew('pkg-a', 'one');
+    store.startNew('pkg-b', 'other');
+    store.forgetPackage('pkg-a');
+
+    expect(store.sessionsOf('pkg-a'), isEmpty);
+    expect(store.currentOf('pkg-a'), isNull);
+    expect(store.currentOf('pkg-b'), 'other');
+
+    await store.flush();
+    final reopened = GoappSessionsStore();
+    await reopened.load();
+    expect(reopened.sessionsOf('pkg-a'), isEmpty);
+    expect(reopened.currentOf('pkg-a'), isNull);
+    expect(reopened.currentOf('pkg-b'), 'other');
+  });
+
+  test('dropping a goapp that kept nothing changes nothing', () {
+    final store = GoappSessionsStore();
+    store.startNew('pkg-a', 'one');
+    store.forgetPackage('pkg-b');
+
+    expect(store.sessionsOf('pkg-a').map((s) => s.id), ['one']);
+    expect(store.currentOf('pkg-a'), 'one');
+  });
 }
