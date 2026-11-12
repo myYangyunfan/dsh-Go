@@ -50,6 +50,9 @@ class _GoappPanelPageState extends ConsumerState<GoappPanelPage> {
 
   @override
   Widget build(BuildContext context) {
+    // Holds the store alive while the page is open: a provider with no listener
+    // is disposed, and disposing it drops the pending write.
+    ref.watch(goappSessionsProvider);
     final panel = _panel(ref.watch(nativePanelsProvider));
     if (panel != null) return NativePanelPage(panel: panel, sessionId: _session);
     // Switched off, removed, or not loaded yet: name the panel that is missing
