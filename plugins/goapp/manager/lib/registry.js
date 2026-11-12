@@ -36,6 +36,8 @@ export function parse(text) {
       id: g.id,
       name: typeof g.name === 'string' && g.name !== '' ? g.name : g.id,
       version: typeof g.version === 'string' ? g.version : '0.0.0',
+      package: typeof g.package === 'string' ? g.package : '',
+      entry: typeof g.entry === 'string' ? g.entry : '',
       kind: g.kind === 'web' ? 'web' : 'native',
       enabled: g.enabled !== false,
       installedAt: typeof g.installedAt === 'number' ? g.installedAt : 0,
