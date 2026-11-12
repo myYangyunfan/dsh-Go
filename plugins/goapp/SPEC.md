@@ -167,7 +167,8 @@ P2 起必须改 fork 的 Dart/Kotlin，且**必须真机验证**（CONTRIBUTING 
 - `app/lib/links/page_links.dart` 新增 `panelLinkTarget(uri)`；`registerPageLinks` 先查面板
   链接再查页面链接（页面链接要求恰好一段，两者不冲突）。
 - `app/lib/ui/plugins/native/goapp_page.dart` 新增 `GoappPanelPage`：`ref.watch(nativePanelsProvider)`
-  按 package+id 找面板，拿到就渲染 `NativePanelPage`，找不到显示「未知页面」而不是白屏。
+  按 package+id 找面板，拿到就渲染 `NativePanelView`（外面是页面自己的 `AppPage`，
+  因为全屏 goapp 的顶栏要放会话按钮）；找不到显示「未知页面」而不是白屏。
 - 于是任何能发出 `dshgo://` 的入口（链接、ADB `am start -a android.intent.action.VIEW -d ...`、
   浏览器「添加到主屏」）都能直达 goapp，**不需要经过桌面/HomeShell**。
 
@@ -179,14 +180,27 @@ P2 起必须改 fork 的 Dart/Kotlin，且**必须真机验证**（CONTRIBUTING 
 
 `app/lib/state/goapp_sessions.dart` 按 package 存两份东西：会话列表（新的在前，上限
 `goappSessionLimit = 20`）和「下次默认打开哪个」。存在 `SharedPreferences` 的
-`goapp_sessions_v1` 里，写入按 400ms 防抖，读不出来就当空——一份坏掉的偏好不该让 goapp 打不开。
+`goapp_sessions_v1` 里，每次改动都按顺序落盘（写入串在一条 future 链上，没有防抖定时器），
+读不出来就当空——一份坏掉的偏好不该让 goapp 打不开。
 
-- `GoappPanelPage` 在 `initState` 里 `resolve(package, mint)` 一次，结果交给
-  `NativePanelPage(sessionId:)`。所以点桌面图标进来的是**这个 goapp 上次那场对话**，
+- `GoappPanelPage` 在 `initState` 里 `resolve(package, mint)` 一次，结果作为
+  `NativePanelView(sessionId:)` 的作用域。所以点桌面图标进来的是**这个 goapp 上次那场对话**，
   而不是聊天页停在哪儿就跟到哪儿。
-- `mint()` 由调用方给，store 里没有时钟也没有随机数：测试才能断言具体 id。
+- `mintGoappSession()` 是顶层函数，store 里没有时钟也没有随机数：测试才能断言具体 id。
 - 删除默认会话时回落到最新的一场；删光了下次打开就新起一场，不会「恢复一个已经被删的东西」。
 
-**还没做**：goapp 内的会话管理界面（新建/切换/删除），以及 goapp 被关掉或删掉时
-连带清掉它的会话——后者需要接上插件启停的钩子，现在 `GoappSessions` 只提供
-`forget` 这一层能力，没有调用点。
+**goapp 内的会话管理（已做）**：页面自己的 `AppPage` 顶栏有一个 `history` 按钮
+（`IconButton` 的 key 是 `goapp-conversations`），弹出的 `_GoappConversations`
+列出这个 goapp 的会话：
+
+- 新建：`startNew(package, mintGoappSession())` 并切过去；
+- 切换：`select` 之后页面换 key（`goapp|<package>|<session>`）重建，`nativeSurfaceProvider`
+  是 `autoDispose`，旧会话的界面状态随之释放——这正是「死会话不占内存」的落点；
+- 删除：`forget`；删的是当前这场时，回落到最新一场（`resolve`）而不是留在空白页。
+
+界面文案全部复用既有键（`shellChatList` / `commonNewChat` / `commonDelete` / `commonMonthDay`），
+没有新增 ARB —— 本机没有 Flutter SDK，跑不了 `l10n_merge.py` 的 `gen-l10n` 这一步，
+手写生成物是硬规则禁止的。
+
+**还没做**：goapp 被关掉或删掉时连带清掉它的会话——需要接上插件启停的钩子，
+`GoappSessionsStore.forget` 现在只有会话面板这一个调用点；以及桌面图标/会话切换的真机验证。
