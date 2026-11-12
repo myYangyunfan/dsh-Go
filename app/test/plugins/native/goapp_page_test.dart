@@ -49,9 +49,14 @@ FakeBridge goappBridge() {
 }
 
 /// Every session the panel was read under, oldest first.
+///
+/// One socket per read (the bridge hands a fresh stream to each surface), so the
+/// frames have to be collected across all of them — the newest socket holds only
+/// the newest read.
 List<String> scopes(FakeBridge bridge) => [
-  for (final frame in bridge.socket.sent)
-    if (frame['t'] == 'sub' && frame['id'] == 'word') (frame['scope'] as Map?)?['sessionId'] as String? ?? '',
+  for (final socket in bridge.sockets)
+    for (final frame in socket.sent)
+      if (frame['t'] == 'sub' && frame['id'] == 'word') (frame['scope'] as Map?)?['sessionId'] as String? ?? '',
 ];
 
 /// Opens the goapp over a phone-width window and lets it settle.
