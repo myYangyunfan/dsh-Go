@@ -9,6 +9,9 @@ void main() {
   ProviderContainer make() {
     final container = ProviderContainer();
     addTearDown(container.dispose);
+    // Nothing in a plain provider test watches it, and a provider with no
+    // listener is disposed between reads.
+    container.listen(goappSessionsProvider, (_, _) {});
     return container;
   }
 
