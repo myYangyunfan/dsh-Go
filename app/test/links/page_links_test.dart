@@ -177,4 +177,27 @@ void main() {
       expect(opened, [('phone', 's1')]);
     });
   });
+
+  group('panelLinkTarget', () {
+    test('splits a goapp panel link at the last segment', () {
+      expect(panelLinkTarget(Uri.parse('dshgo://open/panel/goapp-demo-word/word')),
+          (package: 'goapp-demo-word', id: 'word'));
+      // A scoped package keeps its slash: everything before the id is the package.
+      expect(panelLinkTarget(Uri.parse('dshgo://open/panel/@scope/pkg/word/')),
+          (package: '@scope/pkg', id: 'word'));
+    });
+
+    test('is null for page links, half a panel link and anything with extras', () {
+      for (final link in [
+        'dshgo://open/engine',
+        'dshgo://open/panel',
+        'dshgo://open/panel/only-a-package',
+        'dshgo://share/panel/a/b',
+        'dshgo://open/panel/a/b?x=1',
+        'dshgo://open/panel/a/b#top',
+      ]) {
+        expect(panelLinkTarget(Uri.parse(link)), isNull, reason: link);
+      }
+    });
+  });
 }
