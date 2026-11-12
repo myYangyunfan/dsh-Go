@@ -34,6 +34,11 @@ void _publisher(WorkshopPublishSample sample) {
   expect(state.session, same(sample.access.session));
   expect(state.working, state.busy || state.waitingForPreviousOperation);
   expect(state.canEditMetadata, state.pendingChecked && !state.working && !state.hasPending);
+  expect(state.canDiscardUnsentSubmission, !state.working && state.hasPending && state.pendingKnownUnsent);
+  if (state.pendingKnownUnsent) {
+    expect(state.hasPending, isTrue);
+    expect(state.result, isNull);
+  }
   expect(() => state.files.clear(), throwsUnsupportedError);
   expect(() => state.fieldErrors.clear(), throwsUnsupportedError);
   if (state.phase == WorkshopPublishPhase.awaitingResponse) {
@@ -51,6 +56,7 @@ void _publisher(WorkshopPublishSample sample) {
     expect(state.hasPending, isTrue);
     expect(state.preparedMetadata, isNotNull);
     expect(state.canEditMetadata, isFalse);
+    expect(state.pendingKnownUnsent, isFalse);
   }
   if (state.preparedMetadata != null) {
     final metadata = state.preparedMetadata!;
@@ -65,6 +71,68 @@ void _publisher(WorkshopPublishSample sample) {
 }
 
 void main() {
+  _sample('publishPendingKnownUnsent', publishPendingKnownUnsent, (sample) {
+    _publisher(sample);
+    expect(sample.publish.phase, WorkshopPublishPhase.failed);
+    expect(sample.publish.source!.kind, 'companion');
+    expect(sample.access.canSubmit('companion'), isFalse);
+    expect(sample.publish.error!.code, 'workshop_companion_disabled');
+    expect(sample.publish.error!.mutationNotSent, isTrue);
+    expect(sample.publish.error!.resultUnknown, isFalse);
+    expect(sample.publish.pendingKnownUnsent, isTrue);
+    expect(sample.publish.canDiscardUnsentSubmission, isTrue);
+    expect(sample.publish.canEditMetadata, isFalse);
+    expect(sample.publish.preparedMetadata, isNotNull);
+  });
+  _sample('publishDiscardingUnsent', publishDiscardingUnsent, (sample) {
+    _publisher(sample);
+    expect(sample.publish.phase, WorkshopPublishPhase.checking);
+    expect(sample.publish.busy, isTrue);
+    expect(sample.publish.hasPending, isTrue);
+    expect(sample.publish.pendingKnownUnsent, isTrue);
+    expect(sample.publish.canDiscardUnsentSubmission, isFalse);
+    expect(sample.publish.canEditMetadata, isFalse);
+    expect(sample.publish.preparedMetadata, isNotNull);
+    expect(sample.publish.error, isNull);
+  });
+  _sample('publishDiscardUnsentPreferenceFailed', publishDiscardUnsentPreferenceFailed, (sample) {
+    _publisher(sample);
+    expect(sample.publish.phase, WorkshopPublishPhase.failed);
+    expect(sample.publish.busy, isFalse);
+    expect(sample.publish.pendingKnownUnsent, isTrue);
+    expect(sample.publish.canDiscardUnsentSubmission, isTrue);
+    expect(sample.publish.error!.code, 'workshop_preferences');
+    expect(sample.publish.preferenceError!.code, 'workshop_preferences');
+    expect(sample.publish.preparedMetadata, isNotNull);
+  });
+  _sample('publishDiscardUnsentComplete', publishDiscardUnsentComplete, (sample) {
+    _publisher(sample);
+    expect(sample.publish.phase, WorkshopPublishPhase.idle);
+    expect(sample.publish.source!.kind, 'companion');
+    expect(sample.publish.input.id, 'moon-cat');
+    expect(sample.publish.input.rightsConfirmed, isFalse);
+    expect(sample.publish.hasPending, isFalse);
+    expect(sample.publish.pendingKnownUnsent, isFalse);
+    expect(sample.publish.canDiscardUnsentSubmission, isFalse);
+    expect(sample.publish.canEditMetadata, isTrue);
+    expect(sample.publish.preparedMetadata, isNull);
+    expect(sample.publish.result, isNull);
+    expect(sample.publish.error, isNull);
+    expect(sample.publish.preferenceError, isNull);
+    expect(sample.publish.cleanupError, isNull);
+  });
+  _sample('publishDiscardUnsentCleanupFailed', publishDiscardUnsentCleanupFailed, (sample) {
+    _publisher(sample);
+    expect(sample.publish.phase, WorkshopPublishPhase.idle);
+    expect(sample.publish.input.rightsConfirmed, isFalse);
+    expect(sample.publish.hasPending, isFalse);
+    expect(sample.publish.pendingKnownUnsent, isFalse);
+    expect(sample.publish.canEditMetadata, isTrue);
+    expect(sample.publish.preparedMetadata, isNull);
+    expect(sample.publish.result, isNull);
+    expect(sample.publish.error, isNull);
+    expect(sample.publish.cleanupError!.code, 'workshop_draft_cleanup');
+  });
   _sample('accessLoading', accessLoading, (state) {
     _access(state);
     expect(state.loading, isTrue);
@@ -292,6 +360,7 @@ void main() {
     _publisher(sample); expect(sample.publish.phase, WorkshopPublishPhase.failed);
     expect(sample.publish.hasPending, isTrue); expect(sample.publish.preferenceError!.code, 'workshop_preferences');
     expect(sample.publish.error, isNull); expect(sample.publish.result, isNull);
+    expect(sample.publish.canDiscardUnsentSubmission, isTrue);
   });
   _sample('publishKnownResultPreferenceFailed', publishKnownResultPreferenceFailed, (sample) {
     _publisher(sample); expect(sample.publish.phase, WorkshopPublishPhase.complete);
@@ -307,6 +376,8 @@ void main() {
     _publisher(sample); expect(sample.publish.phase, WorkshopPublishPhase.ready);
     expect(sample.publish.source, isNull); expect(sample.publish.hasPending, isTrue);
     expect(sample.publish.pendingChecked, isTrue); expect(sample.publish.preparedMetadata!.id, 'moon-cat');
+    expect(sample.publish.pendingKnownUnsent, isFalse);
+    expect(sample.publish.canDiscardUnsentSubmission, isFalse);
   });
   _sample('publishRestoredKnownWithoutArchive', publishRestoredKnownWithoutArchive, (sample) {
     _publisher(sample); expect(sample.publish.result!.status, WorkshopSubmissionStatus.approved);

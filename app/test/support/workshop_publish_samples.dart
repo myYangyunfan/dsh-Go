@@ -12,9 +12,10 @@ WorkshopPublishSample _readPublish(PublishHarness harness) => WorkshopPublishSam
   access: harness.container.read(workshopAccessProvider), publish: harness.state);
 
 Future<void> _prepareSample(PublishHarness harness, {bool rights = true,
-  WorkshopSampleText text = WorkshopSampleText.shortChinese}) async {
+  WorkshopSampleText text = WorkshopSampleText.shortChinese,
+  WorkshopPublishSource source = publishSource}) async {
   await harness.start();
-  if (!harness.controller.selectSource(publishSource) ||
+  if (!harness.controller.selectSource(source) ||
       !harness.controller.setInput(workshopSampleInput(text: text, rights: rights))) {
     throw StateError('Sample form did not enter the editor');
   }
@@ -94,6 +95,68 @@ Future<WorkshopPublishSample> publishReadyShortChinese() => _publishReady(Worksh
 Future<WorkshopPublishSample> publishReadyLongChinese() => _publishReady(WorkshopSampleText.longChinese);
 Future<WorkshopPublishSample> publishReadyEmoji() => _publishReady(WorkshopSampleText.emoji);
 Future<WorkshopPublishSample> publishReadyEnglish() => _publishReady(WorkshopSampleText.english);
+
+Future<void> _pendingUnsentSample(PublishHarness harness) async {
+  await _prepareSample(harness, source: const WorkshopPublishSource(
+    kind: 'companion', localId: 'companion', name: '月白伙伴'));
+  // The production Client supplies this marker only before entering POST.
+  // This sample injects that contract into the real notifier; it does not
+  // itself execute the Client's transport or its separate regression tests.
+  harness.client.creating = (_) async => throw const WorkshopException(
+    'workshop_companion_disabled', mutationNotSent: true);
+  await harness.controller.submit();
+  harness.client.value = WorkshopCapabilities.fromJson(workshopCaps(companion: false));
+  await harness.container.read(workshopAccessProvider.notifier).refresh();
+}
+
+Future<WorkshopPublishSample> publishPendingKnownUnsent() async {
+  final harness = PublishHarness();
+  try { await _pendingUnsentSample(harness); return _readPublish(harness); }
+  finally { await harness.close(); }
+}
+
+Future<WorkshopPublishSample> publishDiscardingUnsent() async {
+  final harness = PublishHarness(), gate = _SampleGate();
+  try {
+    await _pendingUnsentSample(harness);
+    harness.preferences.clearing = (_, _) => gate.wait();
+    return await _sampleWhile(harness.controller.discardUnsentSubmission(), gate,
+      () => _readPublish(harness));
+  } finally { await harness.close(); }
+}
+
+Future<WorkshopPublishSample> publishDiscardUnsentPreferenceFailed() async {
+  final harness = PublishHarness();
+  try {
+    await _pendingUnsentSample(harness);
+    harness.preferences.clearing = (_, _) async => throw const WorkshopException('workshop_preferences');
+    await harness.controller.discardUnsentSubmission();
+    return _readPublish(harness);
+  } finally { await harness.close(); }
+}
+
+Future<WorkshopPublishSample> publishDiscardUnsentComplete() async {
+  final harness = PublishHarness();
+  try {
+    await _pendingUnsentSample(harness);
+    await harness.controller.discardUnsentSubmission();
+    return _readPublish(harness);
+  } finally { await harness.close(); }
+}
+
+Future<WorkshopPublishSample> publishDiscardUnsentCleanupFailed() async {
+  final harness = PublishHarness();
+  try {
+    await _pendingUnsentSample(harness);
+    harness.drafts.cleanup = (_) async => throw const WorkshopException('workshop_storage');
+    await harness.controller.discardUnsentSubmission();
+    return _readPublish(harness);
+  } finally {
+    harness.drafts.cleanup = null;
+    await harness.controller.retryCleanup();
+    await harness.close();
+  }
+}
 
 Future<WorkshopPublishSample> _publishInvalid(WorkshopPublicationInput input, {bool rightsOnly = false}) async {
   final harness = PublishHarness();
