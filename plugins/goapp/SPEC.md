@@ -151,8 +151,10 @@ P2 起必须改 fork 的 Dart/Kotlin，且**必须真机验证**（CONTRIBUTING 
   goapp 快捷方式要走同一套 `rebind`，否则切换桌面图标 alias 后点不动。
 - 入口 `goapp` extra 由 `MainActivity`（`take(intent)` / `onNewIntent`）读，之后 Dart 侧
   直接 push `NativePanelPage.route(...)`，不进 `HomeShell`。
-- 会话隔离：`NativePanelPage` 的 `sessionId` 就是 goapp 自己的会话命名空间，
-  退出时按 `registry.json` 里该 goapp 的 `sessions[]` 清理即可。
+- 会话隔离：`NativePanelPage` 的 `sessionId` 就是 goapp 自己的会话命名空间。
+  这套 id 由 App 生成并保管（`app/lib/state/goapp_sessions.dart`），不是 DSH 会话 id——
+  goapp 是插件界面，Host 根本不知道它们，所以在这里删掉一个也不可能动到 Host 的会话。
+  注册表里的 `sessions[]` 因此只记「欠账」，不是真相。
 
 **构建**：`.github/workflows/build-apk.yml` 产 `dsh-go-<版本>-<flavor>.apk` +
 `SHA256SUMS.txt`；`vendor` 里的 `runtime/build-runtime.sh` 需要 live 的 Termux pin
@@ -172,3 +174,19 @@ P2 起必须改 fork 的 Dart/Kotlin，且**必须真机验证**（CONTRIBUTING 
 **还差 Kotlin 半边**：把 goapp 做成 `ShortcutManager` 动态快捷方式（图标 + intent
 `ACTION_VIEW` 指向上面那个链接）。这一步必须改 `app/android` 并**真机验证**，本环境无法编译，
 所以留作 P2 的下一步；`shortcuts/ShortcutsPlugin.kt` 的 `rebind`/`publish` 就是现成的投放点。
+
+### 每个 goapp 自己的会话（已做）
+
+`app/lib/state/goapp_sessions.dart` 按 package 存两份东西：会话列表（新的在前，上限
+`goappSessionLimit = 20`）和「下次默认打开哪个」。存在 `SharedPreferences` 的
+`goapp_sessions_v1` 里，写入按 400ms 防抖，读不出来就当空——一份坏掉的偏好不该让 goapp 打不开。
+
+- `GoappPanelPage` 在 `initState` 里 `resolve(package, mint)` 一次，结果交给
+  `NativePanelPage(sessionId:)`。所以点桌面图标进来的是**这个 goapp 上次那场对话**，
+  而不是聊天页停在哪儿就跟到哪儿。
+- `mint()` 由调用方给，store 里没有时钟也没有随机数：测试才能断言具体 id。
+- 删除默认会话时回落到最新的一场；删光了下次打开就新起一场，不会「恢复一个已经被删的东西」。
+
+**还没做**：goapp 内的会话管理界面（新建/切换/删除），以及 goapp 被关掉或删掉时
+连带清掉它的会话——后者需要接上插件启停的钩子，现在 `GoappSessions` 只提供
+`forget` 这一层能力，没有调用点。
