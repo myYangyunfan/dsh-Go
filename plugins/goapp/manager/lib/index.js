@@ -6,6 +6,7 @@
 // the dsh-go bridge the `ctx.inject(['dshGo'], …)` callback never runs and the
 // registry still answers over `ctx.dshGo`-less calls to `apply` (tests).
 import { load, noteSession, remove as removeEntry, save, setEnabled, upsert } from './registry.js'
+import { download } from './download.js'
 import { scanInbox } from './import.js'
 import { loadStore } from './store.js'
 import { goappData, goappView, words } from './view.js'
@@ -27,7 +28,7 @@ function panelRef(entry) {
 
 /**
  * @param {any} ctx
- * @param {{ env?: Record<string, string | undefined> }} [options] for tests
+ * @param {{ env?: Record<string, string | undefined>, fetch?: typeof fetch }} [options] for tests
  */
 export function apply(ctx, options = {}) {
   const env = options.env ?? process.env
@@ -89,13 +90,28 @@ export function apply(ctx, options = {}) {
 
         refresh: () => [{ type: 'refresh' }],
 
-        /** Install a store entry that is already unpacked in the inbox. */
-        install: (scope, event) => {
+        /**
+         * Install one store entry: register it from the inbox, or — when the
+         * listing carries `url` + `sha256` — download and unpack it first. The
+         * download is awaited, so the panel shows the real outcome rather than
+         * a toast that later turns out to be wrong.
+         */
+        install: async (scope, event) => {
           const w = words(event?.locale)
           const id = idOf(event)
           if (id === '') return []
-          const local = scanInbox(env).find((entry) => entry.id === id)
-          if (local === undefined) return [{ type: 'toast', text: `${w.notDownloaded}: ${id}` }]
+          let local = scanInbox(env).find((entry) => entry.id === id)
+          if (local === undefined) {
+            const listing = loadStore(env).goapps.find((entry) => entry.id === id)
+            if (listing === undefined) return [{ type: 'toast', text: `${w.notDownloaded}: ${id}` }]
+            const got = await download(listing, env, { fetchImpl: options.fetch })
+            if (!got.ok) {
+              const why = got.reason === 'no-url' ? w.notDownloaded : `${w.downloadFailed}: ${got.reason}`
+              return [{ type: 'toast', text: `${why} (${id})` }, { type: 'refresh' }]
+            }
+            local = scanInbox(env).find((entry) => entry.id === id)
+            if (local === undefined) return [{ type: 'toast', text: `${w.notDownloaded}: ${id}` }]
+          }
           write(upsert(read(), local))
           return [
             { type: 'toast', text: `${w.installed_one} ${local.name}` },
