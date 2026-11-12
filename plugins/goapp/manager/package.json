@@ -1,0 +1,41 @@
+{
+  "name": "dsh-go-goapp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "goapp manager: install, enable, remove and open goapp packages (mini apps that run on the DSH engine).",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": ["lib", "cordis.patch.yml", "README.md", "LICENSE"],
+  "scripts": {
+    "check": "node ../../sdk/plugin-kit/bin/check.mjs . --load"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dshGo": {
+    "v": 1,
+    "title": { "zh": "goapp", "en": "goapp" },
+    "icon": "plugin",
+    "contributes": {
+      "panels": [
+        {
+          "id": "goapps",
+          "title": { "zh": "goapp 管理", "en": "goapp manager" },
+          "icon": "plugin",
+          "placement": ["features", "plugin"]
+        }
+      ]
+    }
+  },
+  "engines": {
+    "node": ">=22.19",
+    "dsh": ">=0.2.1-rc.2 <0.3.0-0"
+  }
+}
