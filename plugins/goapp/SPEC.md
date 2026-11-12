@@ -111,3 +111,35 @@ ShortcutInfo: id = "goapp:<id>", shortLabel = goapp 名, icon = goapp 图标
 | P3 | 权限层 | `phone` 权限默认关，开启后每次操作需确认 |
 
 P2 起必须改 fork 的 Dart/Kotlin，且**必须真机验证**（CONTRIBUTING 的同款要求：写明 ABI、Android 版本、启动方式、设备）。
+
+## 9. P2 落地锚点（已对照 fork 源码核对）
+
+**跨包打开面板目前被 App 限制在同一个插件内**，这是 P2 的第一个真正门槛：
+
+- 解析：`app/lib/plugins/native/native_effects.dart:214-226` 接受 `{panel: "<id>"}` 或 `"panel:<id>"`，
+  非面板页要求落在 `UiSchema.pages` 里。
+- 执行：`app/lib/ui/plugins/native/native_taps.dart:685-691` 用
+  `plugin.panels.where((p) => p.id == panel)` 只在**当前插件**里找目标，找不到就报
+  `plugslotsIssueUnknownPage('panel:<id>')`。
+- 结论：管理器的 `open` 动作打不开别的 goapp 的面板。最小改法是让 `panel` 允许
+  `"<package>/<id>"` 形式，解析时改走插件注册表按 package 取面板。
+
+**全屏宿主已经存在，不用新写**：
+
+- `app/lib/ui/plugins/native/native_panel.dart:155` 的 `NativePanelPage`，
+  配套 `NativePanelPage.route({required NativePanel panel, String? sessionId})`，
+  内部就是 `AppPage.list`；拿到 `NativePanel` 就能全屏打开。
+
+**桌面直达（P2 剩余部分）必须改 App**：
+
+- `app/android/app/src/main/kotlin/**/shortcuts/ShortcutsPlugin.kt`：
+  `publish(recents)` :87、`chat(...)`（`ShortcutInfo` 构造）:193、`rebind(context, entry)` :215。
+  goapp 快捷方式要走同一套 `rebind`，否则切换桌面图标 alias 后点不动。
+- 入口 `goapp` extra 由 `MainActivity`（`take(intent)` / `onNewIntent`）读，之后 Dart 侧
+  直接 push `NativePanelPage.route(...)`，不进 `HomeShell`。
+- 会话隔离：`NativePanelPage` 的 `sessionId` 就是 goapp 自己的会话命名空间，
+  退出时按 `registry.json` 里该 goapp 的 `sessions[]` 清理即可。
+
+**构建**：`.github/workflows/build-apk.yml` 产 `dsh-go-<版本>-<flavor>.apk` +
+`SHA256SUMS.txt`；`vendor` 里的 `runtime/build-runtime.sh` 需要 live 的 Termux pin
+（proot 已随 termux-main 更新到 5.1.107.102）。
