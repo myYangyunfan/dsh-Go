@@ -28,6 +28,10 @@ function entry(raw) {
     id,
     name: typeof raw.name === 'string' && raw.name !== '' ? raw.name : id,
     version: typeof raw.version === 'string' ? raw.version : '0.0.0',
+    // The npm package that ships the goapp. `id` is the goapp's own id (what the
+    // registry and the inbox agree on), so the store needs both to say which
+    // package to look for and to open it by `<package>/<panel>`.
+    package: typeof raw.package === 'string' ? raw.package : '',
     kind: raw.kind === 'web' ? 'web' : 'native',
     summary: typeof raw.summary === 'string' ? raw.summary : '',
   }
