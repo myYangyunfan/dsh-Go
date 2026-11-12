@@ -1,8 +1,10 @@
 // Helpers for the local rehearsal only. No production request path imports this.
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { registerHooks, stripTypeScriptTypes } from 'node:module';
 import { extname, resolve, sep } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const PET_ID = 'workshop-local-pet';
@@ -108,7 +110,22 @@ export function dartResultObserver() {
       if (event.type === 'done') done = event.success === true;
     },
     passed: () => completed && done,
+    evidence: () => completed && done ? { name: DART_TEST, result: 'success', skipped: false } : null,
   };
+}
+
+// Called only after stopping this run's child processes. Windows can retain a
+// just-closed SQLite file briefly; six attempts add at most 3s of backoff.
+export async function removeTemporaryStorage(directory, { remove = rm, wait = delay } = {}) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await remove(directory, { recursive: true, force: true });
+      return attempt + 1;
+    } catch (error) {
+      if (attempt === 5 || !['EBUSY', 'EMFILE', 'ENFILE', 'ENOTEMPTY', 'EPERM'].includes(error.code)) throw error;
+      await wait((attempt + 1) * 200);
+    }
+  }
 }
 
 export async function rehearsalFixtures(worker) {

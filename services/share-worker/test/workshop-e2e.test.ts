@@ -1,9 +1,12 @@
 import { createPrivateKey, X509Certificate } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { Agent, createServer, request } from 'node:https';
+import type { AddressInfo } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { DART_TEST, dartResultObserver, diagnosticLines, localConfig, localEnvironment,
-  loopbackOrigin, parseJsonc } from '../scripts/workshop-e2e-support.mjs';
+  loopbackOrigin, parseJsonc, removeTemporaryStorage } from '../scripts/workshop-e2e-support.mjs';
+import { localTlsCredentials } from '../scripts/workshop-e2e-tls.mjs';
 
 const worker = fileURLToPath(new URL('..', import.meta.url));
 const config = () => parseJsonc(readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8'));
@@ -75,8 +78,10 @@ describe('local rehearsal configuration and result boundaries', () => {
     observer.line(JSON.stringify({ type: 'testStart', test: { id: 7, name: DART_TEST } }));
     observer.line(JSON.stringify({ type: 'testDone', testID: 7, result: 'success', skipped: false }));
     expect(observer.passed()).toBe(false);
+    expect(observer.evidence()).toBeNull();
     observer.line(JSON.stringify({ type: 'done', success: true }));
     expect(observer.passed()).toBe(true);
+    expect(observer.evidence()).toEqual({ name: DART_TEST, result: 'success', skipped: false });
   });
 
   it('does not count a skipped Dart test as an HTTP pass', () => {
@@ -85,6 +90,7 @@ describe('local rehearsal configuration and result boundaries', () => {
     observer.line(JSON.stringify({ type: 'testDone', testID: 7, result: 'success', skipped: true }));
     observer.line(JSON.stringify({ type: 'done', success: true }));
     expect(observer.passed()).toBe(false);
+    expect(observer.evidence()).toBeNull();
   });
 
   it('does not accept another test or a failed run as the required Dart result', () => {
@@ -97,13 +103,81 @@ describe('local rehearsal configuration and result boundaries', () => {
     }
   });
 
-  it('uses the matching public test key and a certificate limited to loopback', () => {
-    const certificate = new X509Certificate(readFileSync(new URL('./fixtures/workshop-local-tls/localhost-cert.pem', import.meta.url)));
-    const key = createPrivateKey(readFileSync(new URL('./fixtures/workshop-local-tls/localhost-key.pem', import.meta.url)));
+  it('generates a fresh matching key and short-lived certificate limited to loopback', () => {
+    const now = new Date(), tls = localTlsCredentials(now), certificate = new X509Certificate(tls.cert);
+    const key = createPrivateKey(tls.key), another = new X509Certificate(localTlsCredentials(now).cert);
     expect(certificate.checkPrivateKey(key)).toBe(true);
+    expect(certificate.verify(certificate.publicKey)).toBe(true);
     expect(certificate.ca).toBe(true);
     expect(certificate.subjectAltName).toBe('IP Address:127.0.0.1');
     expect(certificate.checkIP('127.0.0.1')).toBe('127.0.0.1');
+    expect(certificate.checkIP('127.0.0.2')).toBeUndefined();
     expect(certificate.checkHost('example.org')).toBeUndefined();
+    expect(Math.abs(Date.parse(certificate.validFrom) - now.getTime() + 300000)).toBeLessThan(1000);
+    expect(Math.abs(Date.parse(certificate.validTo) - now.getTime() - 86400000)).toBeLessThan(1000);
+    expect(another.fingerprint256).not.toBe(certificate.fingerprint256);
+    expect(another.checkPrivateKey(key)).toBe(false);
+  });
+
+  it('encodes the X509 time boundary without a fixed certificate expiry', () => {
+    const certificate = new X509Certificate(localTlsCredentials(new Date('2049-12-31T12:00:00Z')).cert);
+    expect(new Date(certificate.validFrom).toISOString()).toBe('2049-12-31T11:55:00.000Z');
+    expect(new Date(certificate.validTo).toISOString()).toBe('2050-01-01T12:00:00.000Z');
+    expect(certificate.verify(certificate.publicKey)).toBe(true);
+  });
+
+  it('serves real loopback HTTPS with only the generated certificate trusted', async () => {
+    const tls = localTlsCredentials(), trusted = new Agent({ ca: tls.cert, keepAlive: false });
+    const untrusted = new Agent({ keepAlive: false });
+    const server = createServer(tls, (_, response) => { response.end('local-only'); });
+    try {
+      await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
+      const port = (server.address() as AddressInfo).port;
+      const read = (agent: Agent) => new Promise<number | undefined>((resolve, reject) => {
+        const outgoing = request({ hostname: '127.0.0.1', port, path: '/', agent }, incoming => {
+          incoming.resume(); incoming.once('error', reject); incoming.once('end', () => resolve(incoming.statusCode));
+        });
+        outgoing.once('error', reject); outgoing.setTimeout(3000, () => outgoing.destroy(new Error('local TLS timeout'))); outgoing.end();
+      });
+      expect(await read(trusted)).toBe(200);
+      await expect(read(untrusted)).rejects.toThrow();
+    } finally {
+      trusted.destroy(); untrusted.destroy(); server.closeAllConnections();
+      if (server.listening) await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    }
+  });
+
+  it('retries transient removal errors for only the supplied run directory', async () => {
+    let attempts = 0;
+    const waits: number[] = [];
+    const result = await removeTemporaryStorage('owned-temporary-directory', {
+      remove: async (directory: string, options: object) => {
+        expect(directory).toBe('owned-temporary-directory');
+        expect(options).toEqual({ recursive: true, force: true });
+        if (++attempts < 3) throw Object.assign(new Error('transient lock'), { code: attempts === 1 ? 'EPERM' : 'EBUSY' });
+      },
+      wait: async (milliseconds: number) => { waits.push(milliseconds); },
+    });
+    expect(result).toBe(3); expect(attempts).toBe(3); expect(waits).toEqual([200, 400]);
+  });
+
+  it('bounds persistent lock retries and preserves the failure', async () => {
+    let attempts = 0;
+    const waits: number[] = [], locked = Object.assign(new Error('persistent lock'), { code: 'ENOTEMPTY' });
+    await expect(removeTemporaryStorage('owned-temporary-directory', {
+      remove: async () => { attempts++; throw locked; },
+      wait: async (milliseconds: number) => { waits.push(milliseconds); },
+    })).rejects.toBe(locked);
+    expect(attempts).toBe(6); expect(waits).toEqual([200, 400, 600, 800, 1000]);
+  });
+
+  it('does not retry an unrelated filesystem failure', async () => {
+    let attempts = 0, waits = 0;
+    const failure = Object.assign(new Error('I/O failure'), { code: 'EIO' });
+    await expect(removeTemporaryStorage('owned-temporary-directory', {
+      remove: async () => { attempts++; throw failure; },
+      wait: async () => { waits++; },
+    })).rejects.toBe(failure);
+    expect(attempts).toBe(1); expect(waits).toBe(0);
   });
 });

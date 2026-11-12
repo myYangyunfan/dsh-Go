@@ -24,6 +24,8 @@ node services/share-worker/scripts/workshop-e2e.mjs --skip-dart
 
 它最终为 **`PARTIAL`、退出码 2**。完整成功为 `PASS`、退出码 0；步骤或清理失败为 `FAIL`、退出码 1。只有指定 Dart 测试真正运行且通过、JSON reporter 报整次运行成功，才可能完整通过；进程退出 0 或测试被跳过不能代替这一条件。
 
+Dart 阶段通过时另打印一行 `{"dartTest":{"name":"local Worker catalog installs and uninstalls through the real Dart stack","result":"success","skipped":false}}`；这行由目标 testDone 与整次 done 事件共同确认后输出。仅有阶段名、退出0或跳过不会产生这行成功证据。
+
 ## 顺序和断言
 
 | 步骤 | 必须得到的结果 |
@@ -45,7 +47,9 @@ node services/share-worker/scripts/workshop-e2e.mjs --skip-dart
 
 生产 HTTPS 来源门保持不变。两端只监听 `127.0.0.1`，假论坛只接受 `GET /session/current.json` 和本次随机合成 User API Key。临时 ADMIN_KEY 也随机生成，仅写本次临时 `.dev.vars`。二者不放命令行、URL 或成功摘要。
 
-`test/fixtures/workshop-local-tls/` 的证书和私钥是公开测试材料，SAN 仅含 `127.0.0.1`，不能用于真实服务。Node 只给本次 Agent 加该 CA；Worker 子进程通过 `NODE_EXTRA_CA_CERTS` 使用它。锁定 Miniflare core 插件把该变量的证书加入 workerd 出站 TLS 配置。源码事实不代替实际握手：首次作者请求成功，才证明当前 Wrangler／workerd 真正信任了 CA 并联系到假论坛。
+每次运行由 `workshop-e2e-tls.mjs` 用 Node 内置 crypto 现场生成 RSA-2048 密钥和自签名 X509 证书，SAN 仅含 `127.0.0.1`，有效期从生成前5分钟至生成后24小时。证书和私钥只写入本次 mkdtemp 目录（文件模式0600），随清理删除；仓库不再包含固定私钥夹具，也不依赖 OpenSSL 可执行文件或新 npm 包。生成器只接受测试时钟，不接受外部主机名；使用 [Node crypto](https://nodejs.org/docs/latest-v22.x/api/crypto.html) 的密钥生成和签名，以及 [RFC 5280](https://www.rfc-editor.org/rfc/rfc5280.html) 的有限 v3 证书编码。
+
+Node 只给本次 Agent 加该 CA；Worker 子进程通过本次临时 `NODE_EXTRA_CA_CERTS` 文件使用它。锁定 Miniflare core 插件把该变量的证书加入 workerd 出站 TLS 配置。源码事实不代替实际握手：首次作者请求成功，才证明当前 Wrangler／workerd 真正信任了这次生成的 CA 并联系到假论坛。
 
 临时配置保留真实 `src/index.ts`、兼容日期、必要 bindings 和静态页入口，不复制生产 account、routes、cron、Analytics Engine 目的地或外部下载来源。显式 `--local`、R2／KV 本地 binding，每次开关重启用本次同一 `--persist-to`。请求构造只允许本次数字回环 HTTPS origin，不接受任意来源，也不跟随重定向。
 
@@ -60,7 +64,7 @@ node services/share-worker/scripts/workshop-e2e.mjs --skip-dart
 | 环境变量 | 本次值／作用 |
 |---|---|
 | DSH_WORKSHOP_E2E_ORIGIN | 本次 Worker 数字回环 HTTPS origin；未设置时默认 skip。 |
-| DSH_WORKSHOP_E2E_CA_FILE | 公开测试 CA 文件，仅测试自己的 HttpClient 信任。 |
+| DSH_WORKSHOP_E2E_CA_FILE | 本次临时生成的 CA 文件，仅测试自己的 HttpClient 信任。 |
 | DSH_WORKSHOP_E2E_ITEM_ID | workshop-local-pet。 |
 | DSH_WORKSHOP_E2E_ITEM_VERSION | 2.0.0。 |
 
@@ -71,5 +75,7 @@ node services/share-worker/scripts/workshop-e2e.mjs --skip-dart
 失败摘要包含阶段、method／相对 path、已收到的 status／字节数／Content-Type 和白名单形式的稳定错误码，不输出任意响应正文。连接、TLS、超时失败也先记录本次 method／path。子进程输出先拼完整行再替换本次 key，超长行整体省略，避免跨 chunk 泄漏；不转储 headers、环境或私钥。
 
 `finally` 关闭假论坛、本次子进程并删除临时存储。POSIX 使用独立进程组，先 INT、必要时 KILL，有界等组消失；Windows 对本次活着的子进程有界执行 `taskkill /t /f`，再等退出。每个 handle 的停止只执行一次。Wrangler 包装进程若在主动停止前意外退出，不能据此确认 workerd 退出，结果保留清理失败，不把包装进程结束算整个服务树已关闭，也不向已释放 PID 盲目发信号。
+
+删除在上述停止/close 等待之后执行。Windows 刚关闭的 SQLite 文件仍可能短暂被占用；仅对 EBUSY、EMFILE、ENFILE、ENOTEMPTY、EPERM 最多尝试6次，间隔200、400、600、800、1000毫秒，其他错误直接失败。成功摘要的 `tempRemovalAttempts` 给出实际删除尝试次数；用尽后仍报 `temporary_storage_cleanup_failed` 和整体 FAIL，不忽略残留目录。
 
 强制结束 Node、断电或外部工具遗留进程不在 finally 能保证的范围；清理失败时按摘要查本次实例，不批量清理其他进程或目录。

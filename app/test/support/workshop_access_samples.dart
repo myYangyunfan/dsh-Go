@@ -109,7 +109,7 @@ Future<WorkshopPublishSources> _sources({bool initial = false, bool empty = fals
       if (refreshing) return await _sampleWhile(pending, gate, () => container.read(workshopPublishSourcesProvider));
       await pending;
     }
-    return container.read(workshopPublishSourcesProvider);
+    return await container.read(workshopPublishSourcesProvider);
   } finally {
     gate.release();
     if (pending != null) await stateSettled(pending);

@@ -50,7 +50,7 @@ Future<WorkshopCatalogState> _browseLoaded({List<WorkshopEntry>? entries,
     final controller = harness.container.read(workshopCatalogProvider.notifier);
     controller.setKind(kind);
     controller.setQuery(query);
-    return harness.container.read(workshopCatalogProvider);
+    return await harness.container.read(workshopCatalogProvider);
   } finally { harness.dispose(); }
 }
 
@@ -75,7 +75,7 @@ Future<WorkshopCatalogState> browseRefreshErrorKeepsContent() async {
     await harness.catalogReady();
     client.readNetwork = (_) async => throw const WorkshopException('workshop_timeout');
     await harness.container.read(workshopCatalogProvider.notifier).refresh();
-    return harness.container.read(workshopCatalogProvider);
+    return await harness.container.read(workshopCatalogProvider);
   } finally { harness.dispose(); }
 }
 
@@ -97,7 +97,7 @@ Future<WorkshopCatalogState> browseOfflineWithoutCache() async {
     ..readNetwork = (_) async => throw const WorkshopException('workshop_network'));
   try {
     await harness.catalogReady();
-    return harness.container.read(workshopCatalogProvider);
+    return await harness.container.read(workshopCatalogProvider);
   } finally { harness.dispose(); }
 }
 
@@ -107,7 +107,7 @@ Future<WorkshopCatalogState> browseStaleOfflineCopy() async {
   final harness = _LocalSample(client: StateClient()..cached = stale..network = stale);
   try {
     await harness.catalogReady();
-    return harness.container.read(workshopCatalogProvider);
+    return await harness.container.read(workshopCatalogProvider);
   } finally { harness.dispose(); }
 }
 
@@ -116,7 +116,7 @@ Future<WorkshopCatalogState> browseLocalProjectionFailed() async {
     packages: StatePackages()..list = () async => throw const WorkshopException('workshop_storage'));
   try {
     await harness.catalogReady();
-    return harness.container.read(workshopCatalogProvider);
+    return await harness.container.read(workshopCatalogProvider);
   } finally { harness.dispose(); }
 }
 
@@ -127,7 +127,7 @@ Future<WorkshopCatalogState> browseLocalReloadFailedKeepsProjection() async {
     await harness.catalogReady();
     packages.list = () async => throw const WorkshopException('workshop_storage');
     await harness.container.read(workshopCatalogProvider.notifier).reloadLocal();
-    return harness.container.read(workshopCatalogProvider);
+    return await harness.container.read(workshopCatalogProvider);
   } finally { harness.dispose(); }
 }
 
@@ -135,7 +135,7 @@ Future<WorkshopCatalogState> browseUnconfigured() async {
   final harness = _LocalSample(configured: false);
   try {
     await harness.catalogReady();
-    return harness.container.read(workshopCatalogProvider);
+    return await harness.container.read(workshopCatalogProvider);
   } finally { harness.dispose(); }
 }
 

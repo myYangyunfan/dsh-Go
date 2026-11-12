@@ -4,7 +4,7 @@
 // --skip-dart deliberately yields PARTIAL (exit 2), never the full PASS.
 import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, writeFile } from 'node:fs/promises';
 import { Agent, createServer, request as httpsRequest } from 'node:https';
 import { createServer as createPortReservation } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -13,12 +13,11 @@ import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { check, COMPANION_ID, dartResultObserver, diagnosticLines, KEEP_ID, localConfig,
-  localEnvironment, loopbackOrigin, parseJsonc, PET_ID, rehearsalFixtures, sha256 } from './workshop-e2e-support.mjs';
+  localEnvironment, loopbackOrigin, parseJsonc, PET_ID, rehearsalFixtures, removeTemporaryStorage, sha256 } from './workshop-e2e-support.mjs';
+import { localTlsCredentials } from './workshop-e2e-tls.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url)), worker = resolve(here, '..'), repo = resolve(worker, '../..');
 const API = '/api/workshop/v1', ADMIN = API + '/admin', CATALOG = '/market/workshop.json';
-const CA_FILE = resolve(worker, 'test/fixtures/workshop-local-tls/localhost-cert.pem');
-const TLS_KEY_FILE = resolve(worker, 'test/fixtures/workshop-local-tls/localhost-key.pem');
 
 function flutterCommand(env) {
   const name = process.platform === 'win32' ? 'flutter.bat' : 'flutter';
@@ -122,13 +121,13 @@ function readHttp(origin, path, { agent, signal, method = 'GET', headers = {}, b
 
 export async function run({ skipDart = false, log = console.log } = {}) {
   let temp, forum, running, agent, origin, forumOrigin, lastRequest;
-  let step = 'setup', failure;
+  let step = 'setup', failure, tempRemovalAttempts;
   const children = [], completed = [], cleanupErrors = [], abort = new AbortController();
   const interrupted = () => abort.abort();
   process.once('SIGINT', interrupted); process.once('SIGTERM', interrupted);
   const adminKey = randomBytes(32).toString('base64url'), forumKey = randomBytes(32).toString('base64url');
   const secrets = [adminKey, forumKey];
-  const env = localEnvironment(process.env, { NODE_EXTRA_CA_CERTS: CA_FILE });
+  const env = localEnvironment(process.env);
   const execute = async (executable, args, cwd, extra = {}, observe, verbatim = false) => {
     check(!abort.signal.aborted, 'interrupted');
     const handle = launch(executable, args, { cwd, env: { ...env, ...extra }, secrets, onLine: observe, verbatim }); children.push(handle);
@@ -204,11 +203,14 @@ export async function run({ skipDart = false, log = console.log } = {}) {
     check(existsSync(wrangler), 'installed_locked_wrangler_required_no_auto_install');
     const flutter = skipDart ? undefined : flutterCommand(env);
     temp = await mkdtemp(join(tmpdir(), 'dsh-workshop-e2e-'));
+    const tls = localTlsCredentials(), caFile = join(temp, 'localhost-cert.pem'), keyFile = join(temp, 'localhost-key.pem');
+    await writeFile(caFile, tls.cert, { mode: 0o600, flag: 'wx' });
+    await writeFile(keyFile, tls.key, { mode: 0o600, flag: 'wx' });
+    env.NODE_EXTRA_CA_CERTS = caFile;
     env.WRANGLER_LOG_PATH = join(temp, 'wrangler.log');
     await execute(process.execPath, [join(here, 'build-site.mjs')], worker);
     const fixtures = await rehearsalFixtures(worker);
     check(!fixtures.v1.bytes.equals(fixtures.v2.bytes), 'version_fixtures_must_differ');
-    const tls = { key: readFileSync(TLS_KEY_FILE), cert: readFileSync(CA_FILE) };
     agent = new Agent({ ca: tls.cert, keepAlive: false });
     forum = createServer(tls, (request, response) => {
       response.setHeader('Content-Type', 'application/json'); response.setHeader('Cache-Control', 'no-store');
@@ -227,7 +229,7 @@ export async function run({ skipDart = false, log = console.log } = {}) {
       await writeFile(configFile, JSON.stringify(localConfig(worker, original, forumOrigin, { uploads, companion, port })));
       running = launch(process.execPath, [wrangler, 'dev', '--config', configFile, '--local', '--persist-to', persist,
         '--ip', '127.0.0.1', '--port', String(port), '--inspector-ip', '127.0.0.1', '--inspector-port', '0',
-        '--local-protocol', 'https', '--https-cert-path', CA_FILE, '--https-key-path', TLS_KEY_FILE,
+        '--local-protocol', 'https', '--https-cert-path', caFile, '--https-key-path', keyFile,
         '--show-interactive-dev-session=false', '--log-level', 'error'], { cwd: worker, env, secrets, service: true });
       children.push(running);
       const end = Date.now() + 60000;
@@ -267,10 +269,11 @@ export async function run({ skipDart = false, log = console.log } = {}) {
     if (!skipDart) await phase('Dart real client / repository install and uninstall', async () => {
       const observed = dartResultObserver();
       await execute(flutter.executable, flutter.args, join(repo, 'app'), {
-        DSH_WORKSHOP_E2E_ORIGIN: origin, DSH_WORKSHOP_E2E_CA_FILE: CA_FILE,
+        DSH_WORKSHOP_E2E_ORIGIN: origin, DSH_WORKSHOP_E2E_CA_FILE: caFile,
         DSH_WORKSHOP_E2E_ITEM_ID: PET_ID, DSH_WORKSHOP_E2E_ITEM_VERSION: '2.0.0',
       }, line => observed.line(line), flutter.verbatim);
       check(observed.passed(), 'dart_target_did_not_run_and_pass');
+      log(JSON.stringify({ dartTest: observed.evidence() }));
     });
     else log('PARTIAL - Dart stage explicitly skipped; full rehearsal cannot PASS');
     await phase('05 report handling does not withdraw its target', async () => {
@@ -355,15 +358,15 @@ export async function run({ skipDart = false, log = console.log } = {}) {
       catch { cleanupErrors.push('local_forum_cleanup_failed'); }
     }
     if (temp) {
-      try { await rm(temp, { recursive: true, force: true }); } catch { cleanupErrors.push('temporary_storage_cleanup_failed'); }
+      try { tempRemovalAttempts = await removeTemporaryStorage(temp); } catch { cleanupErrors.push('temporary_storage_cleanup_failed'); }
     }
     process.removeListener('SIGINT', interrupted); process.removeListener('SIGTERM', interrupted);
   }
   if (failure || cleanupErrors.length) {
-    log(JSON.stringify({ result: 'FAIL', failure, cleanupErrors, completed })); return 1;
+    log(JSON.stringify({ result: 'FAIL', failure, cleanupErrors, completed, tempRemovalAttempts })); return 1;
   }
   log(JSON.stringify({ result: skipDart ? 'PARTIAL' : 'PASS', completed, forumRequests: forumCalls,
-    dart: skipDart ? 'explicitly_skipped' : 'real_http_passed', cleanup: 'local_services_stopped_and_temp_removed' }));
+    dart: skipDart ? 'explicitly_skipped' : 'real_http_passed', cleanup: 'local_services_stopped_and_temp_removed', tempRemovalAttempts }));
   return skipDart ? 2 : 0;
 }
 

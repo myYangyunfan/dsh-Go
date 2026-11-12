@@ -13,7 +13,7 @@ Future<WorkshopInstalledListState> _installedRows(List<WorkshopLocalEntry> rows,
       await harness.container.read(workshopInstalledProvider.notifier).ready;
       await harness.catalogReady();
     }
-    return harness.container.read(workshopInstalledProvider);
+    return await harness.container.read(workshopInstalledProvider);
   } finally { harness.dispose(); }
 }
 
@@ -95,7 +95,7 @@ Future<WorkshopInstalledListState> installedCatalogFailedKeepsLocal() async {
     client: StateClient()..readNetwork = (_) async => throw const WorkshopException('workshop_network'));
   try {
     await harness.installedReady();
-    return harness.container.read(workshopInstalledProvider);
+    return await harness.container.read(workshopInstalledProvider);
   } finally { harness.dispose(); }
 }
 
@@ -104,7 +104,7 @@ Future<WorkshopInstalledListState> installedLocalReadFailed() async {
     packages: StatePackages()..list = () async => throw const WorkshopException('workshop_storage'));
   try {
     await harness.installedReady();
-    return harness.container.read(workshopInstalledProvider);
+    return await harness.container.read(workshopInstalledProvider);
   } finally { harness.dispose(); }
 }
 
@@ -115,7 +115,7 @@ Future<WorkshopInstalledListState> installedRefreshFailedKeepsRows() async {
     await harness.installedReady();
     packages.list = () async => throw const WorkshopException('workshop_storage');
     await harness.container.read(workshopInstalledProvider.notifier).refresh();
-    return harness.container.read(workshopInstalledProvider);
+    return await harness.container.read(workshopInstalledProvider);
   } finally { harness.dispose(); }
 }
 
@@ -157,7 +157,7 @@ Future<WorkshopInstalledListState> _installedRemoval({bool captureRemoving = fal
     if (untrusted && packages.removed.isNotEmpty) {
       throw StateError('Untrusted row crossed the expected-receipt removal boundary');
     }
-    return harness.container.read(workshopInstalledProvider);
+    return await harness.container.read(workshopInstalledProvider);
   } finally {
     gate.release();
     if (pending != null) await stateSettled(pending);

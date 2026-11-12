@@ -30,8 +30,8 @@ WorkshopSubmissionsSample _readSubmissions(AuthHarness harness) => WorkshopSubmi
 Future<T> _withPersonal<T>(Future<T> Function(AuthHarness harness, PersonalClient client) use,
   {bool flagsDisabled = false}) async {
   final client = PersonalClient()
-    ..readPage = (_, _) async => WorkshopSubmissionPage([_sampleRow()], null)
-    ..readSubmission = (id) async => _sampleRow(id: id)
+    ..readPage = ((_, _) async => WorkshopSubmissionPage([_sampleRow()], null))
+    ..readSubmission = ((id) async => _sampleRow(id: id))
     ..withdrawSubmission = (id, _) async => _sampleRow(id: id, status: WorkshopSubmissionStatus.withdrawn);
   if (flagsDisabled) {
     client.value = WorkshopCapabilities.fromJson(workshopCaps(forum: authForum.toString(), uploads: false, companion: false));
