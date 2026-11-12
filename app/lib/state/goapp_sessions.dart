@@ -134,6 +134,17 @@ class GoappSessionsStore {
     _save();
   }
 
+  /// Drops every conversation of [package].
+  ///
+  /// Called when the goapp itself is removed: nothing would open these again,
+  /// and the id is the only handle the App kept. Switching a goapp off does not
+  /// come here — that is meant to be undone by switching it back on.
+  void forgetPackage(String package) {
+    final hadList = _sessions.remove(package) != null;
+    final hadDefault = _current.remove(package) != null;
+    if (hadList || hadDefault) _save();
+  }
+
   /// Waits for the write that follows a change. Tests and the page's own
   /// teardown use it; nothing else has to.
   Future<void> flush() => _pending;
