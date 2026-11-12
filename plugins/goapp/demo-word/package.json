@@ -1,0 +1,41 @@
+{
+  "name": "goapp-demo-word",
+  "version": "0.1.0",
+  "private": true,
+  "description": "示例 goapp：单词卡。界面与 dsh-go 完全不同，内核仍是 DSH 引擎。",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": ["lib", "cordis.patch.yml"],
+  "scripts": {
+    "check": "node ../../sdk/plugin-kit/bin/check.mjs . --load"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dshGo": {
+    "v": 1,
+    "title": { "zh": "go单词", "en": "go words" },
+    "icon": "school",
+    "contributes": {
+      "panels": [
+        {
+          "id": "word",
+          "title": { "zh": "go单词", "en": "go words" },
+          "icon": "school",
+          "placement": ["features", "plugin"]
+        }
+      ]
+    }
+  },
+  "engines": {
+    "node": ">=22.19",
+    "dsh": ">=0.2.1-rc.2 <0.3.0-0"
+  }
+}
