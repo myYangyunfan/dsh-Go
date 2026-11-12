@@ -1,0 +1,4 @@
+# 装进 profile 时挂载本插件。
+- insert:
+    - id: goapp-demo-word
+      name: goapp-demo-word
