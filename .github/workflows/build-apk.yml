@@ -32,7 +32,7 @@ env:
 jobs:
   apk:
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v5
         with:
@@ -53,7 +53,8 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      # gradlew is not tracked; Flutter needs a wrapper or `gradle` on PATH.
+      # gradlew is not tracked. Gradle configures the project before running a task,
+      # so `wrapper` needs the pub cache and local.properties to exist first.
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: ${{ env.GRADLE_VERSION }}
@@ -70,16 +71,22 @@ jobs:
           path: runtime/.cache
           key: runtime-cache-${{ runner.os }}-${{ hashFiles('runtime/build-runtime.sh', 'runtime/locks/**/package*.json', 'runtime/patches/**') }}
 
-      - name: Ensure the Gradle wrapper exists
-        run: |
-          if [ ! -x app/android/gradlew ]; then
-            (cd app/android && gradle wrapper --gradle-version "${GRADLE_VERSION}" --distribution-type bin)
-          fi
-          app/android/gradlew --version
-
       - name: Flutter pub get
         working-directory: app
         run: flutter pub get --enforce-lockfile
+
+      - name: Point Gradle at the SDKs
+        working-directory: app
+        run: |
+          printf 'sdk.dir=%s\nflutter.sdk=%s\n' "$ANDROID_HOME" "$FLUTTER_ROOT" > android/local.properties
+
+      - name: Ensure the Gradle wrapper exists
+        working-directory: app/android
+        run: |
+          if [ ! -x gradlew ]; then
+            gradle wrapper --gradle-version "${GRADLE_VERSION}" --distribution-type bin
+          fi
+          ./gradlew --version | head -n 5
 
       - name: Build the Linux runtime
         env:
