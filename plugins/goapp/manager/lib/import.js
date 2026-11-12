@@ -11,8 +11,12 @@ export function inboxPath(env = process.env) {
 
 /**
  * Read one package folder into a registry entry, or `null` when it is not a goapp.
- * Accepts `dshGo.goapp` as an object; a bare `true`/string is rejected on purpose —
- * an id has to be stated, not guessed from the folder name.
+ * The marker is `dshGoGoapp` at the top level of package.json, NOT a key inside
+ * `dshGo`: the bridge ignores unknown `dshGo` keys but reports each one as a
+ * warning, so a goapp declaring itself there would carry a permanent warning.
+ * `dshGo.goapp` is still read first for packages that were imported before the
+ * marker moved. Accepts an object only; a bare `true`/string is rejected on
+ * purpose — an id has to be stated, not guessed from the folder name.
  */
 export function readPackage(dir, now = Date.now()) {
   let pkg
@@ -21,7 +25,7 @@ export function readPackage(dir, now = Date.now()) {
   } catch {
     return null
   }
-  const goapp = pkg?.dshGo?.goapp
+  const goapp = pkg?.dshGoGoapp ?? pkg?.dshGo?.goapp
   if (goapp === null || typeof goapp !== 'object') return null
   const id = typeof goapp.id === 'string' ? goapp.id.trim() : ''
   if (id === '') return null
@@ -37,6 +41,7 @@ export function readPackage(dir, now = Date.now()) {
     id,
     name,
     version: typeof pkg.version === 'string' ? pkg.version : '0.0.0',
+    package: typeof pkg.name === 'string' ? pkg.name : '',
     kind: goapp.kind === 'web' ? 'web' : 'native',
     entry: typeof goapp.entry === 'string' ? goapp.entry : '',
     dir,
