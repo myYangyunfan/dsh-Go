@@ -41,6 +41,7 @@ import '../common/empty_view.dart';
 import '../forum/forum_link_host.dart';
 import '../notify/chat_alert_host.dart';
 import '../pets/pet_settings_page.dart';
+import '../plugins/native/goapp_page.dart';
 import '../shell/page_frame.dart';
 import '../theme/app_icons.dart';
 import 'dsh_web_launcher.dart';
@@ -317,6 +318,15 @@ class _WebEntryHostState extends ConsumerState<WebEntryHost> {
         // The page follows the current conversation (WebHome).
         ref.read(activeHostProvider.notifier).select(host);
         ref.read(currentSessionProvider.notifier).select(sessionId);
+      case GoappEntry(:final package, :final panel):
+        // A goapp is a native page, so it cannot open inside the web one:
+        // leave the page and show it over the home shell.
+        if (!mounted || !await DiscardGuard.confirmLeave(context) || !mounted) return;
+        final navigator = Navigator.of(context, rootNavigator: true);
+        navigator.popUntil((route) => route.isFirst);
+        await navigator.push(
+          MaterialPageRoute<void>(builder: (_) => GoappPanelPage(package: package, id: panel)),
+        );
     }
   }
 
