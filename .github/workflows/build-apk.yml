@@ -28,6 +28,9 @@ env:
   NODE_VERSION: 24.22.1
   GRADLE_VERSION: 9.3.1
   TZ: Asia/Shanghai
+  # The Aliyun/Tencent Gradle mirrors are slow and unreliable from a US runner,
+  # so the Android build resolves from the default repositories here.
+  DSH_MAVEN_MIRRORS: '0'
 
 jobs:
   apk:
@@ -61,8 +64,8 @@ jobs:
 
       - name: Install host tools the runtime build needs
         run: |
-          sudo apt-get update -q
-          sudo apt-get install -y --no-install-recommends \
+          sudo apt-get -o Acquire::Retries=3 update -q
+          sudo apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
             xz-utils zstd file unzip gnupg curl ca-certificates
 
       - name: Cache runtime downloads
@@ -133,5 +136,5 @@ jobs:
           gh release create "${GITHUB_REF_NAME}" \
             "${{ steps.collect.outputs.name }}" SHA256SUMS.txt \
             --title "dsh-go ${{ steps.collect.outputs.version }} (fork)" \
-            --notes "自建构建。未配置 key.properties，使用 debug 签名，与官方包不同，安装前需卸载官方版本。" \
+            --notes "Self-built fork APK. No key.properties is configured, so this build is debug-signed and differs from the official package: uninstall the official app before installing." \
             --verify-tag
