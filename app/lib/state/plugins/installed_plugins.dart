@@ -420,6 +420,10 @@ class InstalledPluginsController extends AsyncNotifier<List<PluginBundle>?> {
     final client = _client;
     if (client == null) throw const DshClosedException('not connected');
     final result = await client.removeBundle(bundle.name);
+    // Removed for good: the goapp's conversations would never be opened again,
+    // and the App is the only place that knew their ids. Switching a bundle off
+    // does not come here — that is meant to be undone.
+    if (result.succeeded && r.mounted) ref.read(goappSessionsProvider).forgetPackage(bundle.name);
     if (r.mounted && identical(client, _client)) await refresh().catchError((Object _) {});
     return result;
   }
