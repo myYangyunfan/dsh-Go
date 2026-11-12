@@ -62,7 +62,10 @@ class InputStoreTest(unittest.TestCase):
         (repo / "runtime").mkdir(parents=True)
         shell = (REPO / "runtime/build-runtime.sh").read_text(encoding="utf-8")
         _, pins = store.shell_inputs(REPO)
-        old = pins["proot-v5.1.107.98.zip"]
+        # Any proot zip pin will do: the point is that a changed pin value is
+        # what the inventory reads, so this must not name a version — bumping
+        # PROOT_VERSION in build-runtime.sh would otherwise break the test.
+        old = pins[next(name for name in pins if name.startswith("proot-v"))]
         (repo / "runtime/build-runtime.sh").write_text(shell.replace(old, "f" * 64), encoding="utf-8")
         shutil.copytree(REPO / "runtime/locks", repo / "runtime/locks")
         lock = repo / "runtime/locks/pnpm-11.28.5/package-lock.json"
