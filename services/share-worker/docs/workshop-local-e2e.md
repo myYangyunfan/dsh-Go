@@ -1,6 +1,6 @@
 # 工坊本地 HTTP 联调演练
 
-这条命令在本机启动 HTTPS 假论坛、真实 Worker 本地实例和隔离存储，经过投稿、审核、公开下载，再让真实 Dart client／repository 安装和卸载。它不部署，不接收远端目标或真实密钥参数。
+这条命令在本机启动 HTTPS 假论坛、真实 Worker 本地实例和隔离存储，经过投稿、审核、公开 ZIP／预览 PNG 下载，再让真实 Dart client／repository 安装和卸载。它不部署，不接收远端目标或真实密钥参数。
 
 ## 运行
 
@@ -30,18 +30,22 @@ Dart 阶段通过时另打印一行 `{"dartTest":{"name":"local Worker catalog i
 
 | 步骤 | 必须得到的结果 |
 |---|---|
-| 能力和论坛 | 两开关均开；forumOrigin 是本次 HTTPS 假论坛；真实 Worker 完成 create、upload 的论坛请求。 |
-| 首次投稿 | 现有 workshop-fixtures.ts 生成宠物 ZIP；create 是 draft，上传后 pending；身份与 metadata 相符。 |
-| 审核和下载 | approved；目录 kind／id／version／SHA／size 正确；公开下载与原 ZIP 逐字相同。 |
-| 新版本 | v2 是唯一当前指向；v1 URL 为 404 workshop_not_found。另发布未撤回宠物和伙伴作开关对照。 |
-| Dart | 同一 Worker 的真实 HTTP、client、repository、包存储完成安装、列表核对、卸载。 |
-| 举报 | 管理列表能看到；handled 记录理由和 actor，目标仍 current，公开 ZIP 不变。处理举报不等于撤回。 |
-| 撤回 | v2 移出目录，withdrawn 保留；v2 和 v1 URL 均为约定的 404，不回退旧版。 |
+| 能力和论坛 | 两开关均开；forumOrigin 是本次 HTTPS 假论坛；公开预览合同为 schema1／PNG／512每边／262144像素／2MiB，支持两种固定来源；真实 Worker 完成 create、upload 的论坛请求。 |
+| 首次投稿 | 现有 workshop-fixtures.ts 生成宠物 ZIP；v1声明 pet-idle，create是无图draft，上传后pending并登记图；身份与metadata相符。pending图片匿名GET／HEAD不可取，固定admin端点无key为401，有key得到登记SHA／大小的PNG。 |
+| 审核和下载 | approved；目录kind／id／version／ZIP SHA／size正确；公开ZIP与原字节相同。公开预览GET与管理员看到的PNG逐字相同，摘要／长度／尺寸与登记描述一致，HEAD有相同长度且无正文。 |
+| 新版本 | v2同样声明预览并成为唯一当前指向；v1的ZIP和PNG URL为404 workshop_not_found。另发布未声明预览的宠物和伙伴，验证旧包／无图条目并作开关对照。 |
+| Dart | 同一Worker的真实HTTP、client、repository、包存储完成安装、列表核对、卸载；真实目录中的preview被解析，publicPreviewUri同步返回同来源、同版本／ZIP／图片摘要的地址。此方法不下载图片。 |
+| 举报 | 管理列表能看到；handled记录理由和actor，目标仍current，公开ZIP与预览PNG都不变。处理举报不等于撤回。 |
+| 撤回 | v2移出目录，withdrawn保留；v2和v1的ZIP URL及PNG GET／HEAD均为约定404，不回退旧版。 |
 | 两开关 | 同一存储重启；上传关拒新投稿、对照资源仍可读；伙伴关过滤伙伴，专门目录／伙伴下载／新伙伴投稿为 503，宠物仍可读、可投。 |
-| 恢复和 ETag | 重开恢复未撤回伙伴，撤回作品不复活；开关变化使旧 ETag 请求得到 200／新值，同状态同开关返回无正文 304。 |
+| 恢复和 ETag | 重开恢复未撤回伙伴，撤回作品及两版PNG均不复活；开关变化使旧ETag请求得到200／新值，同状态同开关返回无正文304。 |
 | 审核页 | 200、text/html；实际唯一内联脚本 SHA-256 与完整固定 CSP 逐字比对；无管理 key 的 admin 数据请求为 401。 |
 
 宠物固定 id 为 `workshop-local-pet`，v2 为 `2.0.0`，minApp 显式 `1.0.0`，清单 id 同步。对照宠物为 `workshop-local-keep`。伙伴只用现有合成夹具，不运行模型、脚本或 GPU。小 ZIP 的真实 HTTP 字节校验不是设备渲染证据。
+
+预览断言嵌在原有11阶段内，不增加投稿意图或作者create配额。仅主宠物v1／v2的metadata新增`previewSource: pet-idle`，ZIP仍是原manifest和引用sheet，没有新增图片成员；`keep`、`keepNext`及伙伴继续省略该字段，上传／审核／目录必须继续无图。两版原sheet像素相同，归档因动画时间不同而不同；这能同时验证共享图片摘要仍按版本／归档路径授权。
+
+预览响应核对五字段规范路径、Content-Type、Content-Length、private/no-store、nosniff、实际字节SHA及PNG签名／IHDR尺寸。PNG完整CRC、压缩流及像素验证由真实Worker承担；本演练的HTTP断言不另写一套图片解码器。匿名图片请求不附论坛或管理凭据，且仍受本次回环来源门约束。不能用管理员端点成功代替公开授权断言。图片GET／HEAD不要求206或304。
 
 ## HTTPS 和本地隔离
 
@@ -68,7 +72,7 @@ Node 只给本次 Agent 加该 CA；Worker 子进程通过本次临时 `NODE_EXT
 | DSH_WORKSHOP_E2E_ITEM_ID | workshop-local-pet。 |
 | DSH_WORKSHOP_E2E_ITEM_VERSION | 2.0.0。 |
 
-固定测试名为 `local Worker catalog installs and uninstalls through the real Dart stack`。Flutter 使用 `--no-pub` 和 JSON reporter；默认 CI 未设环境仍跳过，不改 workflow。Dart 选 appVersion `1.0.0`，用真实安装／卸载事务和独立临时目录。桌面 freeBytes 未知，不据此声称 Android 空间平台通道、页面或真机已验证。
+固定测试名为 `local Worker catalog installs and uninstalls through the real Dart stack`。Flutter 使用 `--no-pub` 和 JSON reporter；默认 CI 未设环境仍跳过，不改 workflow。Dart 选 appVersion `1.0.0`，用真实安装／卸载事务和独立临时目录；同一测试在安装前核对公开预览描述与纯地址方法，PNG网络字节核验由Node阶段完成。桌面 freeBytes 未知，不据此声称 Android 空间平台通道、页面或真机已验证。
 
 ## 失败和收尾
 

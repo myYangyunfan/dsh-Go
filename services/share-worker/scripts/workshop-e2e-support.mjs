@@ -12,9 +12,35 @@ export const KEEP_ID = 'workshop-local-keep';
 export const COMPANION_ID = 'workshop-local-companion';
 export const DART_TEST = 'local Worker catalog installs and uninstalls through the real Dart stack';
 export const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
+export const REHEARSAL_PREVIEW = { schema: 1, sources: ['pet-idle', 'companion-preview'], format: 'png',
+  maxWidth: 512, maxHeight: 512, maxPixels: 262144, maxBytes: 2097152 };
 
 export function check(value, code) {
   if (!value) throw Object.assign(new Error(code), { rehearsalCode: code });
+}
+
+export function previewDescriptor(value, meta) {
+  check(value && typeof value === 'object' && !Array.isArray(value) && typeof value.sha256 === 'string' && /^[a-f0-9]{64}$/.test(value.sha256) &&
+    Number.isSafeInteger(value.size) && value.size > 0 && value.size <= REHEARSAL_PREVIEW.maxBytes &&
+    Number.isSafeInteger(value.width) && value.width > 0 && value.width <= REHEARSAL_PREVIEW.maxWidth &&
+    Number.isSafeInteger(value.height) && value.height > 0 && value.height <= REHEARSAL_PREVIEW.maxHeight &&
+    value.width * value.height <= REHEARSAL_PREVIEW.maxPixels &&
+    value.path === `/market/workshop/${meta.kind}/${meta.id}/${meta.version}/${meta.sha256}/preview/${value.sha256}.png`,
+  'preview_descriptor_mismatch');
+  // Canonical field order makes later equality independent of JSON key order.
+  return { path: value.path, sha256: value.sha256, size: value.size, width: value.width, height: value.height };
+}
+
+export function previewResponse(response, preview, { head = false } = {}) {
+  check(response.status === 200 && response.headers['content-type'] === 'image/png' &&
+    response.headers['content-length'] === String(preview.size) && response.headers['cache-control'] === 'private, no-store' &&
+    response.headers['x-content-type-options'] === 'nosniff', 'preview_response_headers_mismatch');
+  if (head) { check(response.bytes.length === 0, 'preview_head_has_body'); return; }
+  check(response.bytes.length === preview.size && sha256(response.bytes) === preview.sha256, 'preview_response_bytes_mismatch');
+  check(response.bytes.length >= 33 && response.bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) &&
+    response.bytes.readUInt32BE(8) === 13 && response.bytes.subarray(12, 16).toString('ascii') === 'IHDR' &&
+    response.bytes.readUInt32BE(16) === preview.width && response.bytes.readUInt32BE(20) === preview.height,
+  'preview_response_png_mismatch');
 }
 
 export function loopbackOrigin(value) {
@@ -156,8 +182,10 @@ export async function rehearsalFixtures(worker) {
       return { bytes, meta: fixture.metaFor(bytes, { id, version, minApp: '1.0.0', title: { zh: '本地演练小宠物', en: 'Local rehearsal pet' } }) };
     };
     const bytes = fixture.companion();
+    const v1 = pet(PET_ID, '1.0.0', 100), v2 = pet(PET_ID, '2.0.0', 125);
+    v1.meta.previewSource = 'pet-idle'; v2.meta.previewSource = 'pet-idle';
     return {
-      v1: pet(PET_ID, '1.0.0', 100), v2: pet(PET_ID, '2.0.0', 125),
+      v1, v2,
       keep: pet(KEEP_ID, '1.0.0', 100), keepNext: pet(KEEP_ID, '2.0.0', 125),
       companion: { bytes, meta: fixture.metaFor(bytes, { kind: 'companion', id: COMPANION_ID, version: '1.0.0', minApp: '1.0.0' }) },
     };

@@ -13,7 +13,8 @@ import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { check, COMPANION_ID, dartResultObserver, diagnosticLines, KEEP_ID, localConfig,
-  localEnvironment, loopbackOrigin, parseJsonc, PET_ID, rehearsalFixtures, removeTemporaryStorage, sha256 } from './workshop-e2e-support.mjs';
+  localEnvironment, loopbackOrigin, parseJsonc, PET_ID, previewDescriptor, previewResponse, REHEARSAL_PREVIEW,
+  rehearsalFixtures, removeTemporaryStorage, sha256 } from './workshop-e2e-support.mjs';
 import { localTlsCredentials } from './workshop-e2e-tls.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url)), worker = resolve(here, '..'), repo = resolve(worker, '../..');
@@ -173,6 +174,9 @@ export async function run({ skipDart = false, log = console.log } = {}) {
     const { value } = await call(API + '/capabilities');
     check(value.schema === 1 && value.features?.uploads === uploads && value.features?.companion === companion && value.forumOrigin === forumOrigin,
       'capabilities_do_not_match_local_configuration');
+    check(value.preview && Object.entries(REHEARSAL_PREVIEW).filter(([key]) => key !== 'sources').every(([key, expected]) => value.preview[key] === expected) &&
+      Array.isArray(value.preview.sources) && value.preview.sources.length === 2 && REHEARSAL_PREVIEW.sources.every(source => value.preview.sources.includes(source)),
+    'public_preview_capabilities_missing_or_changed');
   };
   const catalog = async (options = {}) => {
     const response = await call(CATALOG, options); check(response.value.schema === 1 && Array.isArray(response.value.entries) && Array.isArray(response.value.withdrawn), 'bad_catalog'); return response;
@@ -184,19 +188,51 @@ export async function run({ skipDart = false, log = console.log } = {}) {
     const response = await call(entry.url, { json: false });
     check(response.headers['content-type'] === 'application/zip' && response.bytes.equals(item.bytes), 'public_archive_bytes_mismatch');
   };
+  const pendingPreviews = new Map();
+  const previewUnavailable = async path => {
+    await expectError(path, 404, 'workshop_not_found');
+    const response = await call(path, { method: 'HEAD', status: 404, json: false });
+    check(response.bytes.length === 0, 'missing_preview_head_has_body');
+  };
+  const publicPreview = async (entry, item, sid) => {
+    const shown = pendingPreviews.get(sid), preview = previewDescriptor(entry.preview, item.meta);
+    check(shown && JSON.stringify(preview) === JSON.stringify(shown.preview), 'published_preview_changed_after_review');
+    const response = await call(preview.path, { json: false }); previewResponse(response, preview);
+    check(response.bytes.equals(shown.bytes), 'public_preview_differs_from_admin_image');
+    previewResponse(await call(preview.path, { method: 'HEAD', json: false }), preview, { head: true });
+  };
+  const legacyEntry = (entry, item) => {
+    check(matches(entry, item) && !Object.hasOwn(entry, 'preview') && !Object.hasOwn(entry, 'previewSource'), 'legacy_publication_gained_preview');
+  };
   let requestNumber = 0, forumCalls = 0;
   const submit = async item => {
     const creation = await call(API + '/submissions', { method: 'POST', body: { ...item.meta, requestId: `local_rehearsal_request_${++requestNumber}` }, author: true, status: 201 });
     const made = creation.value.submission;
     check(made?.status === 'draft' && /^[a-f0-9]{32}$/.test(made.submissionId) && matches(made.metadata, item), 'new_submission_is_not_expected_draft');
+    check(made.metadata.previewSource === item.meta.previewSource && !Object.hasOwn(made, 'preview'), 'draft_preview_choice_mismatch');
     check(made.owner?.forumOrigin === forumOrigin && made.owner?.forumUserId === 7601 && made.owner?.username === 'local-rehearsal-user', 'unexpected_synthetic_owner');
     const uploaded = await call(`${API}/submissions/${made.submissionId}/archive`, { method: 'PUT', body: item.bytes, author: true });
     check(uploaded.value.submission?.status === 'pending' && uploaded.value.submission?.submissionId === made.submissionId && matches(uploaded.value.submission.metadata, item), 'upload_did_not_reach_pending');
+    const submitted = uploaded.value.submission;
+    check(submitted.metadata.previewSource === item.meta.previewSource, 'uploaded_preview_choice_mismatch');
+    if (item.meta.previewSource === 'pet-idle') {
+      const preview = previewDescriptor(submitted.preview, item.meta);
+      await previewUnavailable(preview.path);
+      const endpoint = `${ADMIN}/submissions/${made.submissionId}/public-preview`;
+      await expectError(endpoint, 401, 'workshop_admin_auth_required');
+      const response = await call(endpoint, { admin: true, json: false }); previewResponse(response, preview);
+      pendingPreviews.set(made.submissionId, { preview, bytes: response.bytes });
+    } else {
+      check(!Object.hasOwn(submitted, 'preview') && !Object.hasOwn(submitted.metadata, 'previewSource'), 'legacy_submission_gained_preview');
+    }
     return made.submissionId;
   };
   const approve = async sid => {
     const response = await call(`${ADMIN}/submissions/${sid}/review`, { method: 'POST', admin: true, body: { decision: 'approve', reason: '本地合成材料审核通过' } });
     check(response.value.submission?.submissionId === sid && response.value.submission?.status === 'approved', 'approval_not_recorded');
+    const shown = pendingPreviews.get(sid);
+    if (shown) check(JSON.stringify(previewDescriptor(response.value.submission.preview, response.value.submission.metadata)) === JSON.stringify(shown.preview), 'approval_changed_registered_preview');
+    else check(!Object.hasOwn(response.value.submission, 'preview'), 'legacy_approval_gained_preview');
   };
   try {
     const wrangler = resolve(worker, 'node_modules/wrangler/bin/wrangler.js');
@@ -252,18 +288,23 @@ export async function run({ skipDart = false, log = console.log } = {}) {
       await approve(sid1);
       const { value } = await catalog(); public1 = value.entries.find(entry => entry.kind === 'pet' && entry.id === PET_ID);
       check(public1, 'first_version_missing_from_catalog'); await download(public1, fixtures.v1);
+      await publicPreview(public1, fixtures.v1, sid1);
     });
     await phase('04 next version replaces the current pointer', async () => {
       sid2 = await submit(fixtures.v2); await approve(sid2);
       const { value } = await catalog(), rows = value.entries.filter(entry => entry.kind === 'pet' && entry.id === PET_ID);
       check(rows.length === 1, 'catalog_has_wrong_identity_count'); public2 = rows[0]; await download(public2, fixtures.v2);
+      await publicPreview(public2, fixtures.v2, sid2);
+      check(public2.preview.sha256 === public1.preview.sha256 && public2.preview.path !== public1.preview.path, 'shared_preview_lost_version_binding');
       await expectError(public1.url, 404, 'workshop_not_found');
+      await previewUnavailable(public1.preview.path);
       // Independent, unwithdrawn controls distinguish a pause from withdrawal.
       await approve(await submit(fixtures.keep)); await approve(await submit(fixtures.companion));
       const after = (await catalog()).value;
       kept = after.entries.find(entry => entry.kind === 'pet' && entry.id === KEEP_ID);
       companionEntry = after.entries.find(entry => entry.kind === 'companion' && entry.id === COMPANION_ID);
       check(kept && companionEntry, 'unwithdrawn_controls_missing');
+      legacyEntry(kept, fixtures.keep); legacyEntry(companionEntry, fixtures.companion);
       await download(kept, fixtures.keep); await download(companionEntry, fixtures.companion);
     });
     if (!skipDart) await phase('Dart real client / repository install and uninstall', async () => {
@@ -289,6 +330,7 @@ export async function run({ skipDart = false, log = console.log } = {}) {
         handled.value.target?.current === true && handled.value.target?.withdrawal === null && matches(handled.value.target.release, fixtures.v2), 'report_resolution_changed_target');
       const current = (await catalog()).value.entries.find(entry => entry.kind === 'pet' && entry.id === PET_ID);
       check(current, 'report_handling_unpublished_target'); await download(current, fixtures.v2);
+      await publicPreview(current, fixtures.v2, sid2);
     });
     let previousTag, history;
     await phase('06 withdrawal removes current release without reviving v1', async () => {
@@ -299,6 +341,7 @@ export async function run({ skipDart = false, log = console.log } = {}) {
         current.value.withdrawn.some(entry => entry.kind === 'pet' && entry.id === PET_ID && entry.version === '2.0.0'), 'withdrawal_catalog_mismatch');
       previousTag = current.headers.etag; history = JSON.stringify(current.value.withdrawn); check(previousTag, 'catalog_missing_etag');
       await expectError(public2.url, 404, 'workshop_not_found'); await expectError(public1.url, 404, 'workshop_not_found');
+      await previewUnavailable(public2.preview.path); await previewUnavailable(public1.preview.path);
     });
     await phase('07a upload pause retains browsing and downloads in the same storage', async () => {
       await start(false, true);
@@ -309,6 +352,9 @@ export async function run({ skipDart = false, log = console.log } = {}) {
         body: { ...fixtures.keepNext.meta, requestId: 'local_rehearsal_paused_upload' } });
       await download(current.value.entries.find(entry => entry.id === KEEP_ID), fixtures.keep);
       await download(current.value.entries.find(entry => entry.id === COMPANION_ID), fixtures.companion);
+      legacyEntry(current.value.entries.find(entry => entry.id === KEEP_ID), fixtures.keep);
+      legacyEntry(current.value.entries.find(entry => entry.id === COMPANION_ID), fixtures.companion);
+      await previewUnavailable(public2.preview.path);
     });
     await phase('07b companion pause hides only companion delivery', async () => {
       await start(true, false);
@@ -321,6 +367,7 @@ export async function run({ skipDart = false, log = console.log } = {}) {
       await expectError(API + '/submissions', 503, 'workshop_companion_disabled', { method: 'POST', author: true,
         body: { ...fixtures.companion.meta, version: '2.0.0', requestId: 'local_rehearsal_paused_companion' } });
       await download(current.value.entries.find(entry => entry.id === KEEP_ID), fixtures.keep);
+      legacyEntry(current.value.entries.find(entry => entry.id === KEEP_ID), fixtures.keep);
       await submit(fixtures.keepNext);
     });
     await phase('07c reopening restores the unwithdrawn companion only', async () => {
@@ -331,6 +378,9 @@ export async function run({ skipDart = false, log = console.log } = {}) {
       await download(current.value.entries.find(entry => entry.id === KEEP_ID), fixtures.keep);
       await download(current.value.entries.find(entry => entry.id === COMPANION_ID), fixtures.companion);
       await expectError(public2.url, 404, 'workshop_not_found');
+      await previewUnavailable(public2.preview.path); await previewUnavailable(public1.preview.path);
+      legacyEntry(current.value.entries.find(entry => entry.id === KEEP_ID), fixtures.keep);
+      legacyEntry(current.value.entries.find(entry => entry.id === COMPANION_ID), fixtures.companion);
       const unchanged = await call(CATALOG, { headers: { 'If-None-Match': current.headers.etag }, status: 304, json: false });
       check(unchanged.bytes.length === 0, 'conditional_catalog_has_body');
     });

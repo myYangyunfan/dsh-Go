@@ -69,6 +69,21 @@ void main() {
       if (expectedVersion != null) {
         expect(current.metadata.version, expectedVersion);
       }
+      step = 'public preview: parse the real catalog and construct a same-origin URI';
+      expect(current.metadata.previewSource, 'pet-idle');
+      expect(current.preview, isNotNull);
+      final preview = current.preview!;
+      final previewUri = client.publicPreviewUri(current)!;
+      expect(previewUri, origin.resolve(preview.path));
+      expect(previewUri.origin, origin.origin);
+      expect(previewUri.scheme, 'https');
+      expect(previewUri.userInfo, isEmpty);
+      expect(previewUri.query, isEmpty);
+      expect(previewUri.fragment, isEmpty);
+      expect(previewUri.path,
+        '/market/workshop/pet/$itemId/${current.metadata.version}/${current.metadata.sha256}/preview/${preview.sha256}.png');
+      // This synchronous address method does not request image bytes. The
+      // Node phase checks the actual public PNG over the same local HTTPS.
       expect(await repository.installed(), isEmpty);
 
       step = 'install: GET ${current.metadata.archivePath} and catalog revalidation';

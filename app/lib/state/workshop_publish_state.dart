@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../workshop/workshop_client.dart';
 import '../workshop/workshop_models.dart';
+import '../workshop/workshop_preview.dart';
 import '../workshop/workshop_repository.dart' show workshopLocalError;
 import 'workshop_auth_state.dart';
 import 'workshop_preferences.dart';
@@ -295,14 +296,45 @@ class WorkshopPublishController extends Notifier<WorkshopPublishState> {
       state = state.copyWith(error: const WorkshopException('workshop_unsupported_kind'));
       return false;
     }
+    if (source.previewSource != null && source.previewSource != workshopPreviewSources[source.kind]) {
+      state = state.copyWith(error: const WorkshopException('workshop_bad_metadata'));
+      return false;
+    }
+    _changeSource(context, source, source.initialInput());
+    return true;
+  }
+
+  /// A preview change is an archive/content change. Keep the author's text,
+  /// invalidate the old prepared ZIP, and require a fresh rights confirmation.
+  bool setPreview(WorkshopPreviewInput? preview) {
+    final current = state;
+    final context = _context!;
+    if (!_editorReady(context)) return false;
+    if (current.hasPending) {
+      state = state.copyWith(error: const WorkshopException('workshop_pending_submission'));
+      return false;
+    }
+    final source = current.source;
+    if (source == null) {
+      state = state.copyWith(error: const WorkshopException('workshop_source_required'));
+      return false;
+    }
+    if (preview != null && preview.source != workshopPreviewSources[source.kind]) {
+      state = state.copyWith(error: const WorkshopException('workshop_bad_metadata'));
+      return false;
+    }
+    _changeSource(context, source.withPreview(preview), current.input.copyWith(rightsConfirmed: false));
+    return true;
+  }
+
+  void _changeSource(_PublishContext context, WorkshopPublishSource source, WorkshopPublicationInput input) {
     final old = context.prepared;
     context.prepared = null;
     context.intent = null;
     if (old != null) _retire(context, old);
-    state = state.copyWith(source: source, input: source.initialInput(), clearPrepared: true,
+    state = state.copyWith(source: source, input: input, clearPrepared: true,
       clearResult: true, fieldErrors: const {}, sent: 0, total: 0,
       phase: WorkshopPublishPhase.idle, clearError: true, clearPreferenceError: true);
-    return true;
   }
 
   bool setInput(WorkshopPublicationInput input) {
@@ -365,7 +397,7 @@ class WorkshopPublishController extends Notifier<WorkshopPublishState> {
         return;
       }
       _requireCurrent(context);
-      final publication = current.input.publication(source.kind);
+      final publication = current.input.publication(source.kind, previewSource: source.previewSource);
       final draft = await prepareDraft(source, publication);
       final lease = _DraftLease(draft);
       if (!_current(context)) {

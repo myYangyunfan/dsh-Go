@@ -5,8 +5,9 @@ import type { AddressInfo } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { DART_TEST, dartResultObserver, diagnosticLines, localConfig, localEnvironment,
-  loopbackOrigin, parseJsonc, removeTemporaryStorage } from '../scripts/workshop-e2e-support.mjs';
+  loopbackOrigin, parseJsonc, previewDescriptor, previewResponse, removeTemporaryStorage, sha256 } from '../scripts/workshop-e2e-support.mjs';
 import { localTlsCredentials } from '../scripts/workshop-e2e-tls.mjs';
+import { png } from './workshop-fixtures';
 
 const worker = fileURLToPath(new URL('..', import.meta.url));
 const config = () => parseJsonc(readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8'));
@@ -179,5 +180,48 @@ describe('local rehearsal configuration and result boundaries', () => {
       wait: async () => { waits++; },
     })).rejects.toBe(failure);
     expect(attempts).toBe(1); expect(waits).toBe(0);
+  });
+});
+
+describe('public PNG rehearsal assertions', () => {
+  const meta = { kind: 'pet', id: 'workshop-local-pet', version: '2.0.0', sha256: 'a'.repeat(64) };
+  const bytes = png(), imageSha = sha256(bytes);
+  const preview = { path: `/market/workshop/pet/${meta.id}/${meta.version}/${meta.sha256}/preview/${imageSha}.png`,
+    sha256: imageSha, size: bytes.length, width: 1, height: 1 };
+  const response = () => ({ status: 200, bytes: Buffer.from(bytes), headers: {
+    'content-type': 'image/png', 'content-length': String(bytes.length), 'cache-control': 'private, no-store', 'x-content-type-options': 'nosniff',
+  } });
+
+  it('binds all descriptor fields and compares independent of JSON key ordering', () => {
+    expect(previewDescriptor({ height: 1, size: bytes.length, sha256: imageSha, path: preview.path, width: 1 }, meta)).toEqual(preview);
+    for (const value of [null, { ...preview, path: preview.path.replace('/2.0.0/', '/1.0.0/') },
+      { ...preview, path: 'https://example.org' + preview.path }, { ...preview, width: 513 }, { ...preview, size: 2097153 }]) {
+      expect(() => previewDescriptor(value, meta)).toThrow('preview_descriptor_mismatch');
+    }
+  });
+
+  it('requires exact PNG headers, advertised length, actual bytes and SHA', () => {
+    expect(() => previewResponse(response(), preview)).not.toThrow();
+    for (const [key, value] of [['content-type', 'application/octet-stream'], ['content-length', String(bytes.length + 1)],
+      ['cache-control', 'public'], ['x-content-type-options', '']]) {
+      const wrong = response(); wrong.headers[key as keyof typeof wrong.headers] = value!;
+      expect(() => previewResponse(wrong, preview)).toThrow('preview_response_headers_mismatch');
+    }
+    const different = response(); different.bytes[different.bytes.length - 1] ^= 1;
+    expect(() => previewResponse(different, preview)).toThrow('preview_response_bytes_mismatch');
+  });
+
+  it('checks the PNG signature and IHDR dimensions after the byte identity check', () => {
+    expect(() => previewResponse(response(), { ...preview, width: 2 })).toThrow('preview_response_png_mismatch');
+    const wrong = response(); wrong.bytes[0] = 0;
+    expect(() => previewResponse(wrong, { ...preview, sha256: sha256(wrong.bytes) })).toThrow('preview_response_png_mismatch');
+  });
+
+  it('requires HEAD metadata and an empty body without hashing a nonexistent body', () => {
+    const head = response(); head.bytes = Buffer.alloc(0);
+    expect(() => previewResponse(head, preview, { head: true })).not.toThrow();
+    expect(() => previewResponse(response(), preview, { head: true })).toThrow('preview_head_has_body');
+    head.headers['content-length'] = '0';
+    expect(() => previewResponse(head, preview, { head: true })).toThrow('preview_response_headers_mismatch');
   });
 });
