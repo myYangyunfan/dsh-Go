@@ -54,20 +54,36 @@ List<String> scopes(FakeBridge bridge) => [
     if (frame['t'] == 'sub' && frame['id'] == 'word') (frame['scope'] as Map?)?['sessionId'] as String? ?? '',
 ];
 
+/// Opens the goapp over a phone-width window and lets it settle.
+Future<void> openGoapp(WidgetTester tester, FakeBridge bridge) async {
+  usePhoneView(tester);
+  await tester.pumpWidget(
+    testApp(
+      const GoappPanelPage(package: _pkg, id: 'word'),
+      overrides: nativeOverrides(bridge),
+    ),
+  );
+  await pumpFrames(tester);
+}
+
+/// Long enough for a sheet to finish rising (or falling) before a tap lands.
+Future<void> pumpSheet(WidgetTester tester) async {
+  await tester.pump(const Duration(milliseconds: 400));
+  await pumpFrames(tester);
+}
+
+Future<void> openConversations(WidgetTester tester) async {
+  await tester.tap(find.byIcon(AppIcons.history));
+  await pumpSheet(tester);
+}
+
 void main() {
   setUpAll(loadTestFonts);
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
   testWidgets('a goapp opened from a shortcut runs in its own conversation', (tester) async {
-    usePhoneView(tester);
     final bridge = goappBridge();
-    await tester.pumpWidget(
-      testApp(
-        const GoappPanelPage(package: _pkg, id: 'word'),
-        overrides: nativeOverrides(bridge),
-      ),
-    );
-    await pumpFrames(tester);
+    await openGoapp(tester, bridge);
 
     expect(find.text('apple'), findsOneWidget);
     final first = scopes(bridge).single;
@@ -75,21 +91,13 @@ void main() {
   });
 
   testWidgets('a new conversation reads the panel again under a new session', (tester) async {
-    usePhoneView(tester);
     final bridge = goappBridge();
-    await tester.pumpWidget(
-      testApp(
-        const GoappPanelPage(package: _pkg, id: 'word'),
-        overrides: nativeOverrides(bridge),
-      ),
-    );
-    await pumpFrames(tester);
+    await openGoapp(tester, bridge);
     final first = scopes(bridge).single;
 
-    await tester.tap(find.byIcon(AppIcons.history));
-    await pumpFrames(tester);
+    await openConversations(tester);
     await tester.tap(find.byKey(const ValueKey('goapp-conversation-new')));
-    await pumpFrames(tester);
+    await pumpSheet(tester);
 
     final all = scopes(bridge);
     expect(all.length, greaterThan(1), reason: 'the new conversation is read from the plugin');
@@ -99,30 +107,21 @@ void main() {
   });
 
   testWidgets('dropping the conversation on screen falls back to the one left', (tester) async {
-    usePhoneView(tester);
     final bridge = goappBridge();
-    await tester.pumpWidget(
-      testApp(
-        const GoappPanelPage(package: _pkg, id: 'word'),
-        overrides: nativeOverrides(bridge),
-      ),
-    );
-    await pumpFrames(tester);
+    await openGoapp(tester, bridge);
     final first = scopes(bridge).single;
 
     // A second conversation, then drop it: the goapp goes back to the first.
-    await tester.tap(find.byIcon(AppIcons.history));
-    await pumpFrames(tester);
+    await openConversations(tester);
     await tester.tap(find.byKey(const ValueKey('goapp-conversation-new')));
-    await pumpFrames(tester);
+    await pumpSheet(tester);
     final second = scopes(bridge).last;
     expect(second, isNot(first));
 
-    await tester.tap(find.byIcon(AppIcons.history));
-    await pumpFrames(tester);
+    await openConversations(tester);
     // Newest first: the row on top is the conversation being shown.
     await tester.tap(find.byIcon(AppIcons.delete).first);
-    await pumpFrames(tester);
+    await pumpSheet(tester);
 
     expect(scopes(bridge).last, first, reason: 'the conversation that was left is read again');
   });
