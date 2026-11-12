@@ -103,7 +103,15 @@ jobs:
           status=0
           bash runtime/build-runtime.sh "$abi" 2>&1 | tee runtime-build.log || status=$?
           if [ "$status" -ne 0 ]; then
-            { echo "runtime build failed: exit $status"; tail -n 150 runtime-build.log; } > /tmp/msg.txt
+            {
+              echo "runtime build failed: exit $status"
+              echo
+              echo '### error lines'
+              grep -nE 'error|failed|missing|mismatch|not found|cannot|denied' runtime-build.log | tail -n 40 || true
+              echo
+              echo '### last 40 lines'
+              tail -n 40 runtime-build.log
+            } > /tmp/msg.txt
             gh api -X POST "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" \
               -F "body=@/tmp/msg.txt" >/dev/null 2>&1 || true
             exit "$status"
@@ -120,7 +128,15 @@ jobs:
           status=0
           bash tooling/build-apk.sh -f "$FLAVOR" --"$MODE" --keep-daemon 2>&1 | tee apk-build.log || status=$?
           if [ "$status" -ne 0 ]; then
-            { echo "apk build failed: exit $status"; tail -n 150 apk-build.log; } > /tmp/msg.txt
+            {
+              echo "apk build failed: exit $status"
+              echo
+              echo '### error lines'
+              grep -nE 'error|failed|missing|mismatch|not found|cannot|denied|FAILURE' apk-build.log | tail -n 40 || true
+              echo
+              echo '### last 40 lines'
+              tail -n 40 apk-build.log
+            } > /tmp/msg.txt
             gh api -X POST "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/comments" \
               -F "body=@/tmp/msg.txt" >/dev/null 2>&1 || true
             exit "$status"
