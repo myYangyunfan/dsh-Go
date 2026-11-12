@@ -1,0 +1,4 @@
+# 装进 profile 时挂载本插件。dsh plugin --profile web add <此目录>
+- insert:
+    - id: dsh-go-goapp
+      name: dsh-go-goapp
