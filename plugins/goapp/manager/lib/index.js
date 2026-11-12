@@ -6,6 +6,7 @@
 // the dsh-go bridge the `ctx.inject(['dshGo'], …)` callback never runs and the
 // registry still answers over `ctx.dshGo`-less calls to `apply` (tests).
 import { load, noteSession, remove as removeEntry, save, setEnabled, upsert } from './registry.js'
+import { scanInbox } from './import.js'
 import { goappData, goappView, words } from './view.js'
 
 export const name = 'dsh-go-goapp'
@@ -66,6 +67,19 @@ export function apply(ctx, options = {}) {
         },
 
         refresh: () => [{ type: 'refresh' }],
+
+        /** Register every goapp package dropped into $DSH_HOME/goapps/inbox. */
+        import: (scope, event) => {
+          const found = scanInbox(env)
+          if (found.length === 0) return [{ type: 'toast', text: `${words(event?.locale).imported} 0` }]
+          let registry = read()
+          for (const entry of found) registry = upsert(registry, entry)
+          write(registry)
+          return [
+            { type: 'toast', text: `${words(event?.locale).imported} ${found.length}` },
+            { type: 'refresh' },
+          ]
+        },
       },
     })
   })
