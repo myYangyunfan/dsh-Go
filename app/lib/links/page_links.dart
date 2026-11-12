@@ -17,7 +17,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../ui/companion/companion_page.dart';
 import '../ui/features/feature_catalog.dart';
-import '../ui/plugins/native/goapp_page.dart';
 import '../ui/settings/index/settings_pages.dart';
 import 'app_links.dart';
 
@@ -74,21 +73,9 @@ final pageLinkResolverProvider = Provider<PageResolver>((ref) => pageForId);
 /// reads the conversation open in the chat. Returns the unregister function.
 VoidCallback registerPageLinks(LinkRouter router, {String? Function()? session, PageResolver page = pageForId}) =>
     router.registerLinkHandler(pageLinkHost, (uri) async {
-      final context = router.context;
-      if (context == null || !context.mounted) return false;
-      // A goapp panel first: its link has the multi-segment shape pageLinkId rejects.
-      if (panelLinkTarget(uri) case final target?) {
-        unawaited(
-          Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => GoappPanelPage(package: target.package, id: target.id, sessionId: session?.call()),
-            ),
-          ),
-        );
-        return true;
-      }
       final id = pageLinkId(uri);
-      if (id == null) return false;
+      final context = router.context;
+      if (id == null || context == null || !context.mounted) return false;
       final widget = page(id, session?.call());
       if (widget == null) return false;
       unawaited(Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => widget)));
