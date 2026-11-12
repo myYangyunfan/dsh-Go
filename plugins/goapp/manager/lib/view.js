@@ -8,6 +8,8 @@ const WORDS = {
     title: 'goapp 管理',
     hint: '开启后可从桌面快捷方式直接进入；删除会连同它的会话一起清掉。',
     refresh: '刷新',
+    import: '导入',
+    imported: '已导入',
     open: '打开',
     opening: '打开 goapp',
     openingBody: '桌面直达入口需要在 App 里注册；当前版本先在这里打开。',
@@ -20,6 +22,8 @@ const WORDS = {
     title: 'goapp manager',
     hint: 'Enabled goapps can be opened from a home-screen shortcut; removing one deletes its sessions too.',
     refresh: 'Refresh',
+    import: 'Import',
+    imported: 'Imported',
     open: 'Open',
     opening: 'Opening goapp',
     openingBody: 'The home-screen entry has to be registered by the app; for now it opens here.',
@@ -47,7 +51,10 @@ export function goappView(scope, caps) {
       },
       { type: 'list', items: { $: 'data.items' } },
       { type: 'text', text: w.hint, tone: 'muted' },
-      { type: 'actions', items: [{ label: w.refresh, icon: 'refresh', action: 'refresh' }] },
+      { type: 'actions', items: [
+        { label: w.import, icon: 'download', action: 'import' },
+        { label: w.refresh, icon: 'refresh', action: 'refresh' },
+      ] },
     ],
   }
 }
