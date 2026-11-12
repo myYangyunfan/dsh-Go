@@ -40,7 +40,7 @@ node sdk/plugin-kit/bin/check.mjs plugins/goapp/manager --load
 node sdk/plugin-kit/bin/check.mjs plugins/goapp/demo-word --load
 
 # 单元测试（Node 自带 test runner）
-(cd plugins/goapp/manager && node --test test/goapp.test.js test/store.test.js)
+(cd plugins/goapp/manager && node --test test/goapp.test.js test/store.test.js test/download.test.js)
 
 # 装进本机引擎的 profile
 dsh plugin --profile web add <仓库路径>/plugins/goapp/manager
@@ -48,6 +48,8 @@ dsh plugin --profile web add <仓库路径>/plugins/goapp/demo-word
 ```
 
 装完在 App 里：设置 › 插件 › 已安装 › 重启内核以重载；然后从「全部功能 › 插件」打开 goapp 管理。
+
+商店里的 `go单词` 指向 `plugins/goapp/store/goapp-demo-word-0.1.0.tar.gz`（raw URL + sha256 写在 `manager/data/index.json`），点「安装」会真下载、校验、解包进 `$DSH_HOME/goapps/inbox/` 再登记——不需要先手动放包。
 
 ## 从 App 外直达一个 goapp
 
