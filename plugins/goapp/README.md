@@ -27,10 +27,10 @@
 |---|---|
 | 安装 / 列表 / 开关 / 删除（连带会话记录） | 已实现（管理器面板 + `$DSH_HOME/goapps/registry.json`） |
 | goapp 自带独立界面、全屏打开 | 已实现（插件自己的面板；管理器 `open` 走跨包 `panel` 引用） |
-| 商店列表 + 从 inbox 登记安装 | 已实现（索引在 `manager/data/index.json`，可被 `$DSH_HOME/goapps/store/index.json` 覆盖） |
+| 商店列表 + 下载安装 | 已实现（条目带 `url` + `sha256` 时由 `manager/lib/download.js` 下载校验解包；索引在 `manager/data/index.json`，可被 `$DSH_HOME/goapps/store/index.json` 覆盖） |
 | 从 App 外直达（`dshgo://` 链接） | 已实现（`dshgo://open/panel/<package>/<id>`） |
-| 桌面快捷方式图标 | **未实现**：要动 App 的 Kotlin（`ShortcutManager` + intent），纯插件做不到 |
-| 每 goapp 独立会话命名空间 | **未实现**：现在只记录「这个 goapp 开过哪些 session」，供删除时清理 |
+| 桌面快捷方式图标 | 已实现（App 侧 `ShortcutManager`：启用的 goapp 发布为动态快捷方式，intent 回到同一条 `dshgo://` 链接） |
+| 每 goapp 独立会话命名空间 | 已实现（App 侧 `app/lib/state/goapp_sessions.dart`；goapp 内可新建 / 切换 / 删除会话，卸载时清理） |
 
 ## 安装与验证
 
