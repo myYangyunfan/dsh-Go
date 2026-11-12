@@ -39,6 +39,8 @@ class EntryActivity : Activity() {
                     screenshot?.let { putExtra(ShortcutsPlugin.EXTRA_PATH, it.path) }
                     intent.getStringExtra(EXTRA_SESSION)?.let { putExtra(ShortcutsPlugin.EXTRA_SESSION, it) }
                     intent.getStringExtra(EXTRA_HOST)?.let { putExtra(ShortcutsPlugin.EXTRA_HOST, it) }
+                    intent.getStringExtra(EXTRA_GOAPP_PACKAGE)?.let { putExtra(ShortcutsPlugin.EXTRA_GOAPP_PACKAGE, it) }
+                    intent.getStringExtra(EXTRA_GOAPP_PANEL)?.let { putExtra(ShortcutsPlugin.EXTRA_GOAPP_PANEL, it) }
                     // 问一句's text the pet couldn't send: into the composer, unsent. Only from the pet.
                     if (intent.hasExtra(EXTRA_PET_GENERATION)) {
                         intent.getStringExtra(EXTRA_TEXT)?.take(MAX_TEXT)?.let { putExtra(ShortcutsPlugin.EXTRA_TEXT, it) }
@@ -64,10 +66,13 @@ class EntryActivity : Activity() {
         const val ACTION_VOICE = "io.github.ccch1mneyyy.dsh_app.action.VOICE_INPUT"
         const val ACTION_OPEN_CHAT = "io.github.ccch1mneyyy.dsh_app.action.OPEN_CHAT"
         const val ACTION_SCREENSHOT = "io.github.ccch1mneyyy.dsh_app.action.SCREENSHOT"
+        const val ACTION_OPEN_GOAPP = "io.github.ccch1mneyyy.dsh_app.action.OPEN_GOAPP"
         private const val ACTION_OPEN_APP = "io.github.ccch1mneyyy.dsh_app.action.OPEN_APP"
         const val EXTRA_PET_GENERATION = "pet_generation"
         const val EXTRA_SESSION = "session_id"
         const val EXTRA_HOST = "host"
+        const val EXTRA_GOAPP_PACKAGE = "goapp_package"
+        const val EXTRA_GOAPP_PANEL = "goapp_panel"
         const val EXTRA_TEXT = "text"
         private const val EXTRA_PATH = "screenshot_path"
         private const val MAX_TEXT = 4_000
@@ -77,6 +82,7 @@ class EntryActivity : Activity() {
             ACTION_VOICE -> ShortcutsPlugin.KIND_VOICE
             ACTION_OPEN_CHAT -> ShortcutsPlugin.KIND_CHAT
             ACTION_SCREENSHOT -> ShortcutsPlugin.KIND_SCREENSHOT
+            ACTION_OPEN_GOAPP -> ShortcutsPlugin.KIND_GOAPP
             else -> null
         }
 
@@ -88,6 +94,12 @@ class EntryActivity : Activity() {
 
         fun screenshot(context: Context, path: String): Intent =
             Intent(context, EntryActivity::class.java).setAction(ACTION_SCREENSHOT).putExtra(EXTRA_PATH, path)
+
+        fun openGoapp(context: Context, pkg: String, panel: String): Intent =
+            Intent(context, EntryActivity::class.java).setAction(ACTION_OPEN_GOAPP).apply {
+                putExtra(EXTRA_GOAPP_PACKAGE, pkg)
+                putExtra(EXTRA_GOAPP_PANEL, panel)
+            }
 
         fun openChat(context: Context, sessionId: String, host: String?): Intent =
             Intent(context, EntryActivity::class.java).setAction(ACTION_OPEN_CHAT).apply {
