@@ -11,6 +11,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// someone scrolls through on a phone and keeps the restored state small.
 const goappSessionLimit = 20;
 
+/// A fresh conversation id for one goapp.
+///
+/// No uuid package in the App, and a goapp conversation only has to be unique
+/// among the goapps a phone opens — not globally.
+String mintGoappSession() => 'goapp-${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}';
+
 /// One conversation of one goapp.
 ///
 /// [id] is the App's own scope id — `NativePanelView` keys a panel's data by
