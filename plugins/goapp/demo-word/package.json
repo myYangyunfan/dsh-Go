@@ -30,7 +30,7 @@
           "id": "word",
           "title": { "zh": "go单词", "en": "go words" },
           "icon": "school",
-          "placement": ["features", "plugin"]
+          "placement": ["goapp", "features", "plugin"]
         }
       ]
     }
