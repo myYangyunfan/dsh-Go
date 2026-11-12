@@ -16,6 +16,7 @@ import '../update/version.dart';
 import '../usage/usage_stats.dart';
 import 'app_info.dart';
 import 'connection_state.dart';
+import 'goapp_sessions.dart';
 import 'market_sidecar.dart';
 
 export 'market_sidecar.dart';
