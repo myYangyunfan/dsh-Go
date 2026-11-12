@@ -60,7 +60,12 @@ class GoappSessions extends Notifier<GoappSessionsState> {
 
   @override
   GoappSessionsState build() {
-    ref.onDispose(() => _write?.cancel());
+    // Flush instead of dropping the pending write: closing the page within the
+    // debounce window must not lose the conversation that was just started.
+    ref.onDispose(() {
+      _write?.cancel();
+      unawaited(_writeNow());
+    });
     unawaited(_restore());
     return const GoappSessionsState();
   }
