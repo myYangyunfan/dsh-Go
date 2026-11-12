@@ -157,3 +157,18 @@ P2 起必须改 fork 的 Dart/Kotlin，且**必须真机验证**（CONTRIBUTING 
 **构建**：`.github/workflows/build-apk.yml` 产 `dsh-go-<版本>-<flavor>.apk` +
 `SHA256SUMS.txt`；`vendor` 里的 `runtime/build-runtime.sh` 需要 live 的 Termux pin
 （proot 已随 termux-main 更新到 5.1.107.102）。
+### 从 App 外打开一个 goapp（已做 Dart 半边）
+
+链接形式：`dshgo://open/panel/<package>/<id>`，package 可以带 scope（`@scope/name`），
+所以规则是「`panel` 之后、最后一段之前全是 package，最后一段是面板 id」。
+
+- `app/lib/links/page_links.dart` 新增 `panelLinkTarget(uri)`；`registerPageLinks` 先查面板
+  链接再查页面链接（页面链接要求恰好一段，两者不冲突）。
+- `app/lib/ui/plugins/native/goapp_page.dart` 新增 `GoappPanelPage`：`ref.watch(nativePanelsProvider)`
+  按 package+id 找面板，拿到就渲染 `NativePanelPage`，找不到显示「未知页面」而不是白屏。
+- 于是任何能发出 `dshgo://` 的入口（链接、ADB `am start -a android.intent.action.VIEW -d ...`、
+  浏览器「添加到主屏」）都能直达 goapp，**不需要经过桌面/HomeShell**。
+
+**还差 Kotlin 半边**：把 goapp 做成 `ShortcutManager` 动态快捷方式（图标 + intent
+`ACTION_VIEW` 指向上面那个链接）。这一步必须改 `app/android` 并**真机验证**，本环境无法编译，
+所以留作 P2 的下一步；`shortcuts/ShortcutsPlugin.kt` 的 `rebind`/`publish` 就是现成的投放点。
