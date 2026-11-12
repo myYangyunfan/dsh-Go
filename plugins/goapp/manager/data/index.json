@@ -2,9 +2,10 @@
   "version": 1,
   "goapps": [
     {
-      "id": "goapp-demo-word",
+      "id": "word",
       "name": "go单词",
       "version": "0.1.0",
+      "package": "goapp-demo-word",
       "kind": "native",
       "summary": "单词卡示例：自带界面与状态，内核仍是 DSH 引擎。"
     }
