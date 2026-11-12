@@ -54,6 +54,8 @@ my-goapp/
 
 两条路都收敛为一次 **注册**：写入注册表 + 挂到 profile（`dsh plugin add` 由引擎侧完成，管理器只负责登记与呈现）。
 
+商店包的发布约定：归档是 `.tar.gz`，条目放在**归档根**（`package.json` 在顶层，不再套一层目录），文件落到 `plugins/goapp/store/<package>-<version>.tar.gz`，索引条目写它的 raw URL 与 sha256。`go单词` 就是按这个约定发布的，索引里的 URL 匿名可下载、sha256 与实际字节一致——所以商店的第一次安装是真下载，不是本地登记。
+
 ## 4. 注册表（已实现）
 
 `$DSH_HOME/goapps/registry.json`（默认 `~/.dsh/goapps/registry.json`）：
