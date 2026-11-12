@@ -150,7 +150,7 @@ class LauncherBridge extends NativeInbox<LauncherEntry> {
     try {
       final ok = await channel.invokeMethod<bool>('setRecent', {
         'items': [for (final r in recents) r.toJson()],
-        'goapps': [for (final g in goapps) g.toJson()],
+        if (goapps.isNotEmpty) 'goapps': [for (final g in goapps) g.toJson()],
       });
       // Refused while rate-limited: the next change tries again.
       if (ok ?? false) {
