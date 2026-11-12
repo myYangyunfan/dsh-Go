@@ -98,6 +98,7 @@ jobs:
           FLAVOR: ${{ inputs.flavor || 'arm64' }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -o pipefail
           abi=$([ "$FLAVOR" = "x64" ] && echo x86_64 || echo arm64-v8a)
           status=0
           bash runtime/build-runtime.sh "$abi" 2>&1 | tee runtime-build.log || status=$?
@@ -115,6 +116,7 @@ jobs:
           DSH_BETA_TOKEN_FILE: ''
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -o pipefail
           status=0
           bash tooling/build-apk.sh -f "$FLAVOR" --"$MODE" --keep-daemon 2>&1 | tee apk-build.log || status=$?
           if [ "$status" -ne 0 ]; then
