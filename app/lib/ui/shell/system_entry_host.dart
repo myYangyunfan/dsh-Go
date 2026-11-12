@@ -26,6 +26,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../l10n/l10n.dart';
 import '../../links/app_links.dart';
 import '../../links/launcher_entries.dart';
+import '../../plugins/native/native_state.dart';
+import '../plugins/native/goapp_page.dart';
+
+import 'package:dsh_client/dsh_client.dart' show DshGoPanel;
 import '../../links/share_intake.dart';
 import '../../state/attachments.dart';
 import '../../state/compose_inbox.dart';
@@ -56,11 +60,28 @@ class _SystemEntryHostState extends ConsumerState<SystemEntryHost> {
     _shares = ref.read(shareIntakeProvider).shares.listen((share) => unawaited(_onShare(share)));
     _entries = ref.read(launcherBridgeProvider).entries.listen((entry) => unawaited(_onEntry(entry)));
     _offFiles = ref.read(linkRouterProvider).registerFileFallback(_onFile);
-    ref.listenManual(recentShortcutsProvider, (_, recents) {
-      if (recents != null) {
-        unawaited(ref.read(launcherBridgeProvider).setRecent(recents));
-      }
-    }, fireImmediately: true);
+    ref.listenManual(recentShortcutsProvider, (_, _) => _publishShortcuts(), fireImmediately: true);
+    // Turning a goapp on or off moves its launcher icon with it.
+    ref.listenManual(nativePanelsProvider, (_, _) => _publishShortcuts(), fireImmediately: true);
+  }
+
+  /// The launcher's shortcuts: the recent conversations and every enabled
+  /// goapp. A goapp is a native panel that asked for `goapp` placement
+  /// (plugins/goapp/SPEC.md); a switched-off plugin is absent from
+  /// [nativePanelsProvider], so its icon leaves the launcher too.
+  void _publishShortcuts() {
+    final recents = ref.read(recentShortcutsProvider);
+    if (recents == null) return;
+    unawaited(
+      ref.read(launcherBridgeProvider).setRecent(
+        recents,
+        goapps: [
+          for (final panel in ref.read(nativePanelsProvider))
+            if (panel.placement.contains(DshGoPanel.goapp))
+              GoappShortcut(package: panel.package, panel: panel.id, title: panel.title),
+        ],
+      ),
+    );
   }
 
   @override
@@ -127,6 +148,11 @@ class _SystemEntryHostState extends ConsumerState<SystemEntryHost> {
         // one from switching away on a cold start (as notification taps do).
         ref.read(activeHostProvider.notifier).select(host);
         ref.read(currentSessionProvider.notifier).select(sessionId);
+      case GoappEntry(:final package, :final panel):
+        if (!mounted) return;
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => GoappPanelPage(package: package, id: panel)),
+        );
     }
   }
 
