@@ -19,6 +19,7 @@
       "patch": "./cordis.patch.yml"
     }
   },
+  "dshGoGoapp": { "id": "word", "kind": "native", "entry": "panel:word" },
   "dshGo": {
     "v": 1,
     "title": { "zh": "go单词", "en": "go words" },
