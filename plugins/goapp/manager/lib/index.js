@@ -13,6 +13,19 @@ import { goappData, goappView, words } from './view.js'
 export const name = 'dsh-go-goapp'
 
 /**
+ * `<package>/<panel id>` for a goapp that declares a native panel, else `null`.
+ * The app resolves that form through its plugin registry, so one plugin can open
+ * another plugin's panel; a bare id would only be looked up in this plugin.
+ */
+function panelRef(entry) {
+  if (entry === undefined || entry.kind !== 'native') return null
+  const declared = typeof entry.entry === 'string' ? entry.entry : ''
+  const panelId = declared.startsWith('panel:') ? declared.slice(6) : ''
+  const host = typeof entry.package === 'string' ? entry.package : ''
+  return panelId === '' || host === '' ? null : `${host}/${panelId}`
+}
+
+/**
  * @param {any} ctx
  * @param {{ env?: Record<string, string | undefined> }} [options] for tests
  */
@@ -56,14 +69,21 @@ export function apply(ctx, options = {}) {
           ]
         },
 
-        /** Open a goapp: the full-screen host is the app's job, so say so until it exists. */
+        /** Open a goapp full screen; a package without a native panel still says so. */
         open: (scope, event) => {
           const w = words(event?.locale)
           const id = idOf(event)
           if (id === '') return []
+          const target = panelRef(read().goapps.find((g) => g.id === id))
+          if (target === null) {
+            return [
+              { type: 'toast', text: `${w.opening}: ${id}` },
+              { type: 'callout', text: w.openingBody },
+            ]
+          }
           return [
             { type: 'toast', text: `${w.opening}: ${id}` },
-            { type: 'callout', text: w.openingBody },
+            { type: 'open', panel: target },
           ]
         },
 
