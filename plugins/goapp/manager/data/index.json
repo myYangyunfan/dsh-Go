@@ -7,7 +7,9 @@
       "version": "0.1.0",
       "package": "goapp-demo-word",
       "kind": "native",
-      "summary": "单词卡示例：自带界面与状态，内核仍是 DSH 引擎。"
+      "summary": "单词卡示例：自带界面与状态，内核仍是 DSH 引擎。",
+      "url": "https://raw.githubusercontent.com/myYangyunfan/dsh-Go/main/plugins/goapp/store/goapp-demo-word-0.1.0.tar.gz",
+      "sha256": "d18fe61a1ffacf564aeb6453980e0918c01732cd33d385bb44700a3dc0f70ec3"
     }
   ]
 }
