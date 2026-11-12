@@ -27,6 +27,8 @@ sealed class LauncherEntry {
     final host = raw['host'];
     final text = raw['text'] is String ? raw['text'] as String : '';
     final path = raw['path'];
+    final goappPackage = raw['package'];
+    final goappPanel = raw['panel'];
     return switch (raw['kind']) {
       'new' => NewChatEntry(text: text),
       'voice' => NewChatEntry(voice: true, text: text),
@@ -35,6 +37,12 @@ sealed class LauncherEntry {
         HostRef.decode(host is String ? host : null),
         sessionId,
       ),
+      'goapp'
+          when goappPackage is String &&
+              goappPackage.isNotEmpty &&
+              goappPanel is String &&
+              goappPanel.isNotEmpty =>
+        GoappEntry(goappPackage, goappPanel),
       _ => null,
     };
   }
@@ -65,6 +73,15 @@ class OpenChatEntry extends LauncherEntry {
   final String sessionId;
 }
 
+/// A goapp's own panel, opened from its home-screen icon. A goapp is a plugin
+/// with a panel that asked for `goapp` placement (plugins/goapp/SPEC.md).
+class GoappEntry extends LauncherEntry {
+  const GoappEntry(this.package, this.panel);
+
+  final String package;
+  final String panel;
+}
+
 /// A conversation as a launcher shortcut.
 class RecentShortcut {
   const RecentShortcut({required this.sessionId, required this.title, required this.host});
@@ -87,6 +104,29 @@ class RecentShortcut {
   int get hashCode => Object.hash(sessionId, title, host);
 }
 
+/// One enabled goapp as a launcher shortcut.
+class GoappShortcut {
+  const GoappShortcut({required this.package, required this.panel, required this.title});
+
+  final String package;
+  final String panel;
+  final String title;
+
+  Map<String, Object?> toJson() => {
+    'id': '$package/$panel',
+    'title': title,
+    'package': package,
+    'panel': panel,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      other is GoappShortcut && other.package == package && other.panel == panel && other.title == title;
+
+  @override
+  int get hashCode => Object.hash(package, panel, title);
+}
+
 /// The native bridge: entries in, recent conversations out.
 class LauncherBridge extends NativeInbox<LauncherEntry> {
   LauncherBridge({MethodChannel? channel})
@@ -96,17 +136,27 @@ class LauncherBridge extends NativeInbox<LauncherEntry> {
 
   /// What the launcher has, as far as this run knows.
   List<RecentShortcut>? _published;
+  List<GoappShortcut> _goapps = const [];
 
-  /// Publishes [recents] (newest first) unless the launcher already has
-  /// them. True when the launcher has them now.
-  Future<bool> setRecent(List<RecentShortcut> recents) async {
-    if (_published != null && listEquals(_published, recents)) return true;
+  /// Publishes [recents] (newest first) and [goapps] unless the launcher already
+  /// has them. True when the launcher has them now.
+  Future<bool> setRecent(
+    List<RecentShortcut> recents, {
+    List<GoappShortcut> goapps = const [],
+  }) async {
+    if (_published != null && listEquals(_published, recents) && listEquals(_goapps, goapps)) {
+      return true;
+    }
     try {
       final ok = await channel.invokeMethod<bool>('setRecent', {
         'items': [for (final r in recents) r.toJson()],
+        'goapps': [for (final g in goapps) g.toJson()],
       });
       // Refused while rate-limited: the next change tries again.
-      if (ok ?? false) _published = List.unmodifiable(recents);
+      if (ok ?? false) {
+        _published = List.unmodifiable(recents);
+        _goapps = List.unmodifiable(goapps);
+      }
       return ok ?? false;
     } on MissingPluginException {
       return false;
