@@ -17,6 +17,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../ui/companion/companion_page.dart';
 import '../ui/features/feature_catalog.dart';
+import '../ui/plugins/native/goapp_page.dart';
 import '../ui/settings/index/settings_pages.dart';
 import 'app_links.dart';
 
@@ -34,6 +35,9 @@ const companionPageLink = 'companion';
 
 /// Every page a link may name.
 Set<String> get pageLinkIds => {...SettingsIndex.linkIds, ...catalogPageLinks, companionPageLink};
+
+/// The segment that marks a goapp panel link (`dshgo://open/panel/<package>/<id>`).
+const panelLinkPage = 'panel';
 
 /// The page id [uri] names: exactly `dshgo://open/<id>` (a trailing slash is
 /// fine) with an id from [pageLinkIds]; null otherwise.
@@ -70,14 +74,36 @@ final pageLinkResolverProvider = Provider<PageResolver>((ref) => pageForId);
 /// reads the conversation open in the chat. Returns the unregister function.
 VoidCallback registerPageLinks(LinkRouter router, {String? Function()? session, PageResolver page = pageForId}) =>
     router.registerLinkHandler(pageLinkHost, (uri) async {
-      final id = pageLinkId(uri);
       final context = router.context;
-      if (id == null || context == null || !context.mounted) return false;
+      if (context == null || !context.mounted) return false;
+      // A goapp panel first: its link has the multi-segment shape pageLinkId rejects.
+      if (panelLinkTarget(uri) case final target?) {
+        unawaited(
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => GoappPanelPage(package: target.package, id: target.id, sessionId: session?.call()),
+            ),
+          ),
+        );
+        return true;
+      }
+      final id = pageLinkId(uri);
+      if (id == null) return false;
       final widget = page(id, session?.call());
       if (widget == null) return false;
       unawaited(Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => widget)));
       return true;
     });
+
+/// The goapp panel a link names: `dshgo://open/panel/<package>/<id>`. The package
+/// may be scoped, so it is every segment but the last; null for any other link.
+({String package, String id})? panelLinkTarget(Uri uri) {
+  if (uri.scheme.toLowerCase() != appLinkScheme || uri.host.toLowerCase() != pageLinkHost) return null;
+  if (uri.userInfo.isNotEmpty || uri.hasPort || uri.hasQuery || uri.hasFragment) return null;
+  final segments = uri.pathSegments.where((s) => s.isNotEmpty).toList();
+  if (segments.length < 3 || segments.first != panelLinkPage) return null;
+  return (package: segments.sublist(1, segments.length - 1).join('/'), id: segments.last);
+}
 
 /// A link tapped in a reply: when it is a page link (any `dshgo://open/…`),
 /// hands it to the router — which opens the page, or shows its toast for one
