@@ -73,8 +73,16 @@ class ShortcutsPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHa
                     if (id.isEmpty() || title.isEmpty()) return@mapNotNull null
                     Recent(id, title, map["host"] as? String)
                 }
+                val goapps = (call.argument<List<*>>("goapps") ?: emptyList<Any>()).mapNotNull { raw ->
+                    val map = raw as? Map<*, *> ?: return@mapNotNull null
+                    val pkg = map["package"] as? String ?: return@mapNotNull null
+                    val panel = map["panel"] as? String ?: return@mapNotNull null
+                    val title = (map["title"] as? String)?.trim().orEmpty()
+                    if (pkg.isEmpty() || panel.isEmpty() || title.isEmpty()) return@mapNotNull null
+                    Goapp(pkg, panel, title)
+                }
                 worker.execute {
-                    val ok = publish(items)
+                    val ok = publish(items, goapps)
                     main.post { result.success(ok) }
                 }
             }
@@ -84,19 +92,35 @@ class ShortcutsPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHa
 
     private class Recent(val sessionId: String, val title: String, val host: String?)
 
-    private fun publish(recents: List<Recent>): Boolean {
+    private class Goapp(val pkg: String, val panel: String, val title: String)
+
+    private fun publish(recents: List<Recent>, goapps: List<Goapp> = emptyList()): Boolean {
         val manager = context.getSystemService(ShortcutManager::class.java) ?: return false
         return try {
-            val room = (manager.maxShortcutCountPerActivity - STATIC_SHORTCUTS).coerceIn(0, MAX_RECENT)
+            val room = (manager.maxShortcutCountPerActivity - STATIC_SHORTCUTS).coerceIn(0, MAX_RECENT + MAX_GOAPP)
             val entry = LauncherIconPlugin.entry(context)
-            val shortcuts = recents.take(room).mapIndexed { rank, recent ->
+            // A goapp icon is something the user asked for by name; the recent
+            // conversations rotate anyway, so the goapps take the room first.
+            val kept = goapps.take(room)
+            val recentRoom = (room - kept.size).coerceAtMost(MAX_RECENT)
+            val shortcuts = kept.mapIndexed { rank, g ->
+                goappShortcut(
+                    context,
+                    GOAPP_PREFIX + g.pkg + "/" + g.panel,
+                    ShortcutLabels.short(g.title),
+                    ShortcutLabels.long(g.title),
+                    EntryActivity.openGoapp(context, g.pkg, g.panel),
+                    rank,
+                    entry,
+                )
+            } + recents.take(recentRoom).mapIndexed { index, recent ->
                 chat(
                     context,
                     RECENT_PREFIX + recent.sessionId,
                     ShortcutLabels.short(recent.title),
                     ShortcutLabels.long(recent.title),
                     EntryActivity.openChat(context, recent.sessionId, recent.host),
-                    rank,
+                    kept.size + index,
                     entry,
                 )
             }
@@ -147,6 +171,14 @@ class ShortcutsPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHa
         }
         // Consumed either way: an entry without our token goes nowhere.
         if (intent.getStringExtra(EXTRA_TOKEN) != token) return true
+        if (kind == KIND_GOAPP) {
+            val pkg = intent.getStringExtra(EXTRA_GOAPP_PACKAGE)
+            val panel = intent.getStringExtra(EXTRA_GOAPP_PANEL)
+            if (pkg.isNullOrEmpty() || panel.isNullOrEmpty()) return true
+            val event = mapOf("kind" to kind, "package" to pkg, "panel" to panel)
+            if (ready) methods.invokeMethod("entry", event) else pending += event
+            return true
+        }
         if (kind != KIND_NEW && kind != KIND_VOICE && kind != KIND_CHAT) return true
         val sessionId = intent.getStringExtra(EXTRA_SESSION)
         if (kind == KIND_CHAT && sessionId.isNullOrEmpty()) return true
@@ -173,9 +205,15 @@ class ShortcutsPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHa
         const val KIND_VOICE = "voice"
         const val KIND_CHAT = "chat"
         const val KIND_SCREENSHOT = "screenshot"
+        const val KIND_GOAPP = "goapp"
+
+        const val EXTRA_GOAPP_PACKAGE = "io.github.ccch1mneyyy.dsh_app.entry.GOAPP_PACKAGE"
+        const val EXTRA_GOAPP_PANEL = "io.github.ccch1mneyyy.dsh_app.entry.GOAPP_PANEL"
 
         const val MAX_RECENT = 3
+        const val MAX_GOAPP = 5
         const val RECENT_PREFIX = "chat:"
+        const val GOAPP_PREFIX = "goapp:"
 
         /** 新对话 and 语音输入 in res/xml/shortcuts.xml. */
         private const val STATIC_SHORTCUTS = 2
@@ -191,6 +229,24 @@ class ShortcutsPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHa
             Executors.newSingleThreadExecutor { r -> Thread(r, "dsh-shortcuts").apply { isDaemon = true } }
 
         private fun chat(
+            context: Context,
+            id: String,
+            short: CharSequence,
+            long: CharSequence?,
+            intent: Intent,
+            rank: Int,
+            entry: ComponentName?,
+        ): ShortcutInfo = ShortcutInfo.Builder(context, id)
+            .setShortLabel(short)
+            .apply { if (!long.isNullOrEmpty()) setLongLabel(long) }
+            .setIcon(Icon.createWithResource(context, R.drawable.ic_shortcut_chat))
+            .setIntent(intent)
+            .setRank(rank)
+            .apply { if (entry != null) setActivity(entry) }
+            .build()
+
+        /** A goapp's icon: its own panel, full screen. */
+        private fun goappShortcut(
             context: Context,
             id: String,
             short: CharSequence,
