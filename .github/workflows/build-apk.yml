@@ -1,0 +1,130 @@
+name: Build APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      flavor:
+        description: 'arm64 or x64'
+        default: arm64
+        type: choice
+        options: [arm64, x64]
+      mode:
+        description: 'release or debug'
+        default: release
+        type: choice
+        options: [release, debug]
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-apk-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  FLUTTER_VERSION: 3.47.7
+  NODE_VERSION: 24.22.1
+  GRADLE_VERSION: 9.3.1
+  TZ: Asia/Shanghai
+
+jobs:
+  apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # gradlew is not tracked; Flutter needs a wrapper or `gradle` on PATH.
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+
+      - name: Install host tools the runtime build needs
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends \
+            xz-utils zstd file unzip gnupg curl ca-certificates
+
+      - name: Cache runtime downloads
+        uses: actions/cache@v4
+        with:
+          path: runtime/.cache
+          key: runtime-cache-${{ runner.os }}-${{ hashFiles('runtime/build-runtime.sh', 'runtime/locks/**/package*.json', 'runtime/patches/**') }}
+
+      - name: Ensure the Gradle wrapper exists
+        run: |
+          if [ ! -x app/android/gradlew ]; then
+            (cd app/android && gradle wrapper --gradle-version "${GRADLE_VERSION}" --distribution-type bin)
+          fi
+          app/android/gradlew --version
+
+      - name: Flutter pub get
+        working-directory: app
+        run: flutter pub get --enforce-lockfile
+
+      - name: Build the Linux runtime
+        env:
+          FLAVOR: ${{ inputs.flavor || 'arm64' }}
+        run: |
+          abi=$([ "$FLAVOR" = "x64" ] && echo x86_64 || echo arm64-v8a)
+          bash runtime/build-runtime.sh "$abi"
+
+      - name: Build the APK
+        env:
+          FLAVOR: ${{ inputs.flavor || 'arm64' }}
+          MODE: ${{ inputs.mode || 'release' }}
+          DSH_BETA_TOKEN_FILE: ''
+        run: |
+          bash tooling/build-apk.sh -f "$FLAVOR" --"$MODE" --keep-daemon
+
+      - name: Collect artifacts
+        id: collect
+        run: |
+          flavor=${{ inputs.flavor || 'arm64' }}
+          mode=${{ inputs.mode || 'release' }}
+          apk="app/build/app/outputs/flutter-apk/app-${flavor}-${mode}.apk"
+          test -f "$apk"
+          version=$(sed -n 's/^version:[[:space:]]*\([^+[:space:]]*\).*/\1/p' app/pubspec.yaml)
+          name="dsh-go-${version}-${flavor}.apk"
+          cp "$apk" "$name"
+          sha256sum "$name" > SHA256SUMS.txt
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.collect.outputs.name }}
+          path: |
+            ${{ steps.collect.outputs.name }}
+            SHA256SUMS.txt
+          retention-days: 30
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            "${{ steps.collect.outputs.name }}" SHA256SUMS.txt \
+            --title "dsh-go ${{ steps.collect.outputs.version }} (fork)" \
+            --notes "自建构建。未配置 key.properties，使用 debug 签名，与官方包不同，安装前需卸载官方版本。" \
+            --verify-tag
