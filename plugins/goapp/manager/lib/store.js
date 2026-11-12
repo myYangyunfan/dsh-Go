@@ -1,7 +1,7 @@
 // The goapp store index. First version: a bundled list, plus an optional
 // override at `$DSH_HOME/goapps/store/index.json` so a machine can point at its
-// own market without a rebuild. Downloading a package is out of scope here — the
-// install action only registers what is already unpacked in the inbox.
+// own market without a rebuild. An entry may carry `url` + `sha256`; `download.js`
+// fetches and unpacks it, otherwise `install` only registers what the inbox has.
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -34,6 +34,10 @@ function entry(raw) {
     package: typeof raw.package === 'string' ? raw.package : '',
     kind: raw.kind === 'web' ? 'web' : 'native',
     summary: typeof raw.summary === 'string' ? raw.summary : '',
+    // Optional download: `url` points at a `.tar.gz`, `sha256` pins its bytes.
+    // Both are kept as given; `download.js` decides whether they are usable.
+    url: typeof raw.url === 'string' ? raw.url.trim() : '',
+    sha256: typeof raw.sha256 === 'string' ? raw.sha256.trim() : '',
   }
 }
 
