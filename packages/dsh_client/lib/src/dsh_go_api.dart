@@ -350,6 +350,9 @@ class DshGoPanel {
 
   static const sessionTab = 'session.tab';
   static const features = 'features';
+
+  /// A goapp's own panel: the app may put it on the launcher as an icon.
+  static const goapp = 'goapp';
   static const chatPanel = 'chat.panel';
 
   /// The plugin's own detail page, under its settings.
