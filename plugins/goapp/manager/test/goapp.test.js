@@ -235,6 +235,17 @@ test('open refuses a goapp the manager was told to stop offering', () => {
   assert.match(effects[0].text, /已停用/)
 })
 
+test('open and toggle of an id nobody installed say so in the asked language', () => {
+  const env = tempEnv()
+  const { ctx, panels } = fakeCtx()
+  apply(ctx, { env })
+
+  const opened = panels.goapps.actions.open(null, { id: 'ghost', locale: 'zh' })
+  assert.deepEqual(opened, [{ type: 'toast', text: '没有安装: ghost' }], 'no callout for a goapp that is not there')
+  const toggled = panels.goapps.actions.toggle(null, { id: 'ghost', locale: 'en' })
+  assert.deepEqual(toggled, [{ type: 'toast', text: 'Not installed: ghost' }])
+})
+
 /** Drop a goapp package into the inbox under an arbitrary folder name. */
 function drop(env, folder, pkg) {
   const dir = path.join(inboxPath(env), folder)
