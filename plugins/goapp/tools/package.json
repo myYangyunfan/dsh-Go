@@ -1,0 +1,14 @@
+{
+  "name": "@dsh-go/goapp-tools",
+  "version": "0.1.0",
+  "private": true,
+  "description": "打包与发布 goapp：把包目录变成商店能下载的 .tar.gz，并给出索引条目。",
+  "type": "module",
+  "bin": { "goapp-pack": "./pack.mjs" },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=22.19"
+  }
+}
