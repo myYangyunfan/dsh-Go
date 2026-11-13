@@ -4,12 +4,12 @@
     {
       "id": "word",
       "name": "go单词",
-      "version": "0.2.1",
+      "version": "0.2.2",
       "package": "goapp-demo-word",
       "kind": "native",
       "summary": "单词卡示例：自带界面与状态，内核仍是 DSH 引擎。",
-      "url": "https://raw.githubusercontent.com/myYangyunfan/dsh-Go/main/plugins/goapp/store/goapp-demo-word-0.2.1.tar.gz",
-      "sha256": "503b10dff8b1336b17269b2e93fdde02a3fac49f9659cfec61875c0e2e000ba6"
+      "url": "https://raw.githubusercontent.com/myYangyunfan/dsh-Go/main/plugins/goapp/store/goapp-demo-word-0.2.2.tar.gz",
+      "sha256": "4c5d8f5dd03e646fcfc584cefbc9af9445836049b54fa6f66a839b8e92f9e6c7"
     }
   ]
 }
