@@ -78,7 +78,7 @@ my-goapp/
 
 | 动作 | 语义 | 实现位置 |
 |---|---|---|
-| 启用/禁用 | 写 `enabled`；禁用后不打开（是否真的不加载插件由 profile 决定） | `setEnabled` |
+| 启用/停用 | 写 registry 的 `enabled`，并让管理器的「打开」直接拒绝它（toast「已停用」）。**不**改变 Host 侧插件的加载状态：协议里没有「让 A 插件停用 B 插件」的能力，真停用要去 App 的插件开关（设置 › 插件）。管理器的开关管的是「这个商店/管理器还推不推它」，不是「引擎还加不加载它」 | `setEnabled` + `open` |
 | 删除 | 从注册表移除 + 丢弃 `sessions` 记录 | `remove`，面板 action `remove` |
 | 打开 | 渲染该 goapp 的入口 | 面板 action `open`（当前只提示） |
 
