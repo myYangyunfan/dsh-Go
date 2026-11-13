@@ -42,6 +42,7 @@ node sdk/plugin-kit/bin/check.mjs plugins/goapp/demo-word --load
 
 # 单元测试（Node 自带 test runner）
 (cd plugins/goapp/manager && node --test test/goapp.test.js test/store.test.js test/download.test.js)
+(cd plugins/goapp/tools && node --test test/pack.test.js)
 
 # 装进本机引擎的 profile
 dsh plugin --profile web add <仓库路径>/plugins/goapp/manager
@@ -52,7 +53,28 @@ dsh plugin --profile web add <仓库路径>/plugins/goapp/demo-word
 
 桌面端只能验证到「逻辑对」这一层：快捷方式、深链、PRoot 启动都必须在真机上过一遍。照 [DEVICE-CHECK.md](DEVICE-CHECK.md) 走一遍，把表头和结果随 PR 一起贴出来——`CONTRIBUTING.md` 要求的 ABI / Android 版本 / 启动方式 / 机型缺一项，结论就不可复现。
 
-商店里的 `go单词` 指向 `plugins/goapp/store/goapp-demo-word-0.1.0.tar.gz`（raw URL + sha256 写在 `manager/data/index.json`），点「安装」会真下载、校验、解包进 `$DSH_HOME/goapps/inbox/` 再登记——不需要先手动放包。
+商店里的 `go单词` 指向 `plugins/goapp/store/goapp-demo-word-0.2.0.tar.gz`（raw URL + sha256 写在 `manager/data/index.json`），点「安装」会真下载、校验、解包进 `$DSH_HOME/goapps/inbox/` 再登记——不需要先手动放包。`0.1.0` 那个包留在仓库里，用来走「先装旧版、再从商店升级」这条真机路径。
+
+## 发布一个 goapp
+
+包目录就是全部真相，`.tar.gz` 由工具生成，不手搓：
+
+```bash
+# 打包 + 打印索引条目（默认输出到 plugins/goapp/store/）
+node plugins/goapp/tools/pack.mjs plugins/goapp/demo-word \
+  --base-url https://raw.githubusercontent.com/<you>/dsh-Go/main/plugins/goapp/store --json
+
+# 校验仓库里已发布的包和源码是否还一致（sha 不符就退出码 1）
+node plugins/goapp/tools/pack.mjs plugins/goapp/demo-word --check <索引里的 sha256>
+```
+
+三条约定，工具会替你把住：
+
+- **归档根就是包根**：`package.json` 在顶层，不套 `goapp-xxx/` 目录——`scanInbox` 按文件夹读清单，多一层就装不上。
+- **同一份源码必须得到同一份字节**：条目按路径排序、mtime 固定为 0、权限 0644、gzip 头不带时间戳。否则两台机器打出来的 sha 不同，每次都要改索引。
+- **清单不全就不给打**：没有 `dshGoGoapp.id`、版本号不是 `x.y.z[-pre]`、缺 `package.json`，直接拒绝；超过 32 MiB（管理器的安装上限）也拒绝。
+
+`tools/test/pack.test.js` 把「已发布的包 == 源码打出来的字节」和「索引 sha == 已发布字节」钉成测试，所以改了 `demo-word` 却忘了重打商店包，CI 会红。
 
 ## 从 App 外直达一个 goapp
 
