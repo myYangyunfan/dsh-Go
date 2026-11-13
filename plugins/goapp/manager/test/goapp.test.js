@@ -235,6 +235,54 @@ test('open refuses a goapp the manager was told to stop offering', () => {
   assert.match(effects[0].text, /已停用/)
 })
 
+test('a package whose entry goes nowhere is imported but refuses to open', () => {
+  const env = tempEnv()
+  drop(env, 'my-word', {
+    name: 'goapp-broken',
+    version: '0.1.0',
+    dshGo: { title: '坏包', contributes: { panels: [{ id: 'words' }] } },
+    dshGoGoapp: { id: 'broken', kind: 'native', entry: 'panel:word' },
+  })
+  const { ctx, panels } = fakeCtx()
+  apply(ctx, { env })
+  panels.goapps.actions.import(null, { locale: 'zh' })
+
+  const entry = load(env).goapps[0]
+  assert.equal(entry.entryOk, false, 'panel:word is not declared by this package')
+  const effects = panels.goapps.actions.open(null, { id: 'broken', locale: 'zh' })
+  assert.equal(effects.length, 1)
+  assert.match(effects[0].text, /入口打不开/)
+})
+
+test('a web goapp is openable only when its page shipped with it', () => {
+  const env = tempEnv()
+  const missing = drop(env, 'web-missing', {
+    name: 'goapp-web-missing',
+    version: '0.1.0',
+    dshGo: { title: '缺页' },
+    dshGoGoapp: { id: 'webmissing', kind: 'web', entry: 'web/index.html' },
+  })
+  assert.equal(readPackage(missing).entryOk, false, 'the page is not on disk')
+
+  const present = drop(env, 'web-ok', {
+    name: 'goapp-web-ok',
+    version: '0.1.0',
+    dshGo: { title: '有页' },
+    dshGoGoapp: { id: 'webok', kind: 'web', entry: 'web/index.html' },
+  })
+  fs.mkdirSync(path.join(present, 'web'), { recursive: true })
+  fs.writeFileSync(path.join(present, 'web', 'index.html'), '<!doctype html>')
+  assert.equal(readPackage(present).entryOk, true)
+
+  const nativePanel = drop(env, 'native-ok', {
+    name: 'goapp-native-ok',
+    version: '0.1.0',
+    dshGo: { title: '面板', contributes: { panels: [{ id: 'word' }] } },
+    dshGoGoapp: { id: 'nativeok', kind: 'native', entry: 'panel:word' },
+  })
+  assert.equal(readPackage(nativePanel).entryOk, true)
+})
+
 test('open and toggle of an id nobody installed say so in the asked language', () => {
   const env = tempEnv()
   const { ctx, panels } = fakeCtx()
