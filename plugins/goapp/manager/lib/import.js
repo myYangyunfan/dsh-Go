@@ -99,6 +99,10 @@ export function scanInboxDetailed(env = process.env, now = Date.now()) {
   const found = []
   for (const e of names) {
     if (!e.isDirectory()) continue
+    // A dot folder is never a package: `inbox/.tmp` is where downloads are
+    // unpacked before being renamed into place, and a run killed mid-write
+    // leaves a partial one behind. Reading it would register a truncated goapp.
+    if (e.name.startsWith('.')) continue
     const dir = path.join(inbox, e.name)
     const entry = readPackage(dir, now)
     if (entry !== null) found.push({ entry, at: mtimeOf(dir) })
@@ -153,6 +157,7 @@ export function inboxFoldersFor(entry, env = process.env) {
   }
   for (const e of names) {
     if (!e.isDirectory()) continue
+    if (e.name.startsWith('.')) continue
     const found = readPackage(path.join(inbox, e.name))
     if (found !== null && (found.id === entry.id || keyOf(found) === key)) out.push(e.name)
   }
