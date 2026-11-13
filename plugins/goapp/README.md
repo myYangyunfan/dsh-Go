@@ -86,6 +86,8 @@ node plugins/goapp/tools/verify.mjs
 
 依次跑管理器测试、打包测试、`sdk/plugin-kit` 对两个插件的 `--load` 校验，最后一行是 `all 4 steps passed` 或失败清单；任一步红了退出码就是 1，适合挂到任何 CI 上。这个 fork 的 GitHub Actions 目前是停的，所以「记得跑哪四条命令」不是流程，这条命令才是。
 
+其中一组测试是**跨语言接缝**（`tools/test/contract.test.js`）：插件侧是纯 JS，App 侧是 Dart + Kotlin，两边没有任何一个编译器同时看见。它按名字钉住 `_panelNamed`、`GoappEntry`、`KIND_GOAPP`、`goapps` 载荷键这些接口，任一端改名就红，并直接指出「哪个文件不再包含哪个标识」。只在 `plugins/goapp` 里改而端点没跟上，就是靠这组测试拦住的。只有 `plugins/goapp` 的 checkout 会把它标成 skip，skip 不算通过。
+
 只在本地放了 `plugins/goapp`、没有整仓的情况下，用 `--check` 指到另一份 checkout 的校验器：
 
 ```bash
