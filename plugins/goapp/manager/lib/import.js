@@ -45,6 +45,10 @@ export function readPackage(dir, now = Date.now()) {
     kind: goapp.kind === 'web' ? 'web' : 'native',
     entry: typeof goapp.entry === 'string' ? goapp.entry : '',
     dir,
+    // The folder name, not the package name: a package dropped in by hand keeps
+    // whatever folder the user unzipped it into, and removal has to delete that
+    // exact folder or the files stay behind and 导入 resurrects the goapp.
+    folder: path.basename(dir),
     enabled: true,
     installedAt: now,
     sessions: [],
