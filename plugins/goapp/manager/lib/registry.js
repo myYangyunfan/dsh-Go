@@ -63,10 +63,20 @@ export function save(registry, env = process.env) {
   fs.renameSync(tmp, file)
 }
 
-/** Insert or replace by id, newest first. */
+/**
+ * Insert or replace by id, newest first. An update keeps the two fields that
+ * belong to the user rather than to the package: `enabled` (installing a new
+ * version must not silently turn a goapp back on) and `sessions` (the removal
+ * IOU list, which the store download cannot know).
+ */
 export function upsert(registry, entry) {
+  const previous = registry.goapps.find((g) => g.id === entry.id)
   const rest = registry.goapps.filter((g) => g.id !== entry.id)
-  return { ...registry, goapps: [entry, ...rest] }
+  const merged =
+    previous === undefined
+      ? entry
+      : { ...entry, enabled: previous.enabled, sessions: previous.sessions }
+  return { ...registry, goapps: [merged, ...rest] }
 }
 
 export function remove(registry, id) {
