@@ -234,3 +234,116 @@ test('open refuses a goapp the manager was told to stop offering', () => {
   assert.equal(effects[0].type, 'toast')
   assert.match(effects[0].text, /已停用/)
 })
+
+/** Drop a goapp package into the inbox under an arbitrary folder name. */
+function drop(env, folder, pkg) {
+  const dir = path.join(inboxPath(env), folder)
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify(pkg))
+  return dir
+}
+
+test('import remembers the folder the package was unzipped into', () => {
+  const env = tempEnv()
+  drop(env, 'my-word', {
+    name: 'goapp-demo-word',
+    version: '0.2.2',
+    dshGo: { title: 'go单词' },
+    dshGoGoapp: { id: 'word', kind: 'native', entry: 'panel:word' },
+  })
+  const { ctx, panels } = fakeCtx()
+  apply(ctx, { env })
+  panels.goapps.actions.import(null, { locale: 'zh' })
+  const entry = load(env).goapps[0]
+  assert.equal(entry.id, 'word')
+  assert.equal(entry.package, 'goapp-demo-word')
+  assert.equal(entry.folder, 'my-word', 'the folder, not the package name, is what delete needs')
+})
+
+test('remove deletes the folder a hand-dropped package actually lives in', () => {
+  const env = tempEnv()
+  const dir = drop(env, 'my-word', {
+    name: 'goapp-demo-word',
+    version: '0.2.2',
+    dshGoGoapp: { id: 'word', kind: 'native', entry: 'panel:word' },
+  })
+  const { ctx, panels } = fakeCtx()
+  apply(ctx, { env })
+  panels.goapps.actions.import(null, { locale: 'zh' })
+
+  panels.goapps.actions.remove(null, { id: 'word', locale: 'zh' })
+
+  assert.equal(fs.existsSync(dir), false, 'the real folder has to go, not a folder named after the package')
+  assert.match(panels.goapps.actions.import(null, { locale: 'zh' })[0].text, /0$/, 'nothing left for 导入 to resurrect')
+})
+
+test('a folder in the registry that points outside the inbox is ignored', () => {
+  const env = tempEnv()
+  const outside = path.join(env.dir, 'keep')
+  fs.mkdirSync(outside, { recursive: true })
+  fs.writeFileSync(path.join(outside, 'keep.txt'), 'x')
+  const dir = drop(env, 'goapp-demo-word', {
+    name: 'goapp-demo-word',
+    version: '0.2.2',
+    dshGoGoapp: { id: 'word', kind: 'native', entry: 'panel:word' },
+  })
+  fs.mkdirSync(path.join(env.dir, 'goapps'), { recursive: true })
+  fs.writeFileSync(
+    registryPath(env),
+    JSON.stringify({
+      version: 1,
+      goapps: [
+        { id: 'word', name: '词', package: 'goapp-demo-word', folder: '../../keep', kind: 'native', entry: 'panel:word', enabled: true, sessions: [] },
+      ],
+    }),
+  )
+  const { ctx, panels } = fakeCtx()
+  apply(ctx, { env })
+
+  panels.goapps.actions.remove(null, { id: 'word', locale: 'zh' })
+
+  assert.equal(fs.existsSync(path.join(outside, 'keep.txt')), true, 'nothing outside the inbox may be deleted')
+  assert.equal(fs.existsSync(dir), false, 'the sanitized package name still finds the package')
+})
+
+test('upsert keeps enabled/sessions across an update of the same package', () => {
+  let reg = upsert(empty(), { id: 'w', name: 'A', version: '1.0.0', package: 'a-pkg', kind: 'native', enabled: false, installedAt: 1, sessions: ['s1'] })
+  reg = upsert(reg, { id: 'w', name: 'A', version: '2.0.0', package: 'a-pkg', kind: 'native', enabled: true, installedAt: 2, sessions: [] })
+  assert.equal(reg.goapps.length, 1)
+  assert.equal(reg.goapps[0].version, '2.0.0')
+  assert.equal(reg.goapps[0].enabled, false, 'a new version must not turn a stopped goapp back on')
+  assert.deepEqual(reg.goapps[0].sessions, ['s1'], 'the removal list survives an update')
+})
+
+test('a different package claiming the same id inherits nothing from it', () => {
+  let reg = upsert(empty(), { id: 'w', name: 'A', version: '1.0.0', package: 'a-pkg', kind: 'native', enabled: false, installedAt: 1, sessions: ['s1'] })
+  reg = upsert(reg, { id: 'w', name: 'B', version: '1.0.0', package: 'b-pkg', kind: 'native', enabled: true, installedAt: 2, sessions: [] })
+  assert.equal(reg.goapps.length, 1)
+  assert.equal(reg.goapps[0].package, 'b-pkg')
+  assert.equal(reg.goapps[0].enabled, true, 'another app must not start out stopped')
+  assert.deepEqual(reg.goapps[0].sessions, [], 'nor inherit sessions it never opened')
+})
+
+test('import replaces the files of a displaced package holding the same id', () => {
+  const env = tempEnv()
+  const first = drop(env, 'a-pkg', {
+    name: 'a-pkg',
+    version: '1.0.0',
+    dshGoGoapp: { id: 'w', kind: 'native', entry: 'panel:w' },
+  })
+  const second = drop(env, 'b-pkg', {
+    name: 'b-pkg',
+    version: '1.0.0',
+    dshGoGoapp: { id: 'w', kind: 'native', entry: 'panel:w' },
+  })
+  const { ctx, panels } = fakeCtx()
+  apply(ctx, { env })
+
+  panels.goapps.actions.import(null, { locale: 'zh' })
+
+  const registry = load(env).goapps
+  assert.equal(registry.length, 1, 'one id, one entry')
+  assert.equal(registry[0].folder, 'b-pkg')
+  assert.equal(fs.existsSync(second), true)
+  assert.equal(fs.existsSync(first), false, 'the displaced package cannot stay around for 导入')
+})
