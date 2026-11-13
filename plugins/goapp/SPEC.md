@@ -60,11 +60,15 @@ my-goapp/
 
 **安装同时是更新**（`manager/lib/store.js:versionNewer`）：`install` 先看 inbox 里已有的那份，只在商店版本**更新**时才下载覆盖；版本相同或商店更旧则不动，不降级。比较按点分数字核心（`1.0.10 > 1.0.9`，缺位算 0），正式版压过自己的预发布（`1.0.0 > 1.0.0-beta.2`），但预发布之间不排序——那是发布方的调用，管理器不猜。更新沿用同一个 id，`registry.upsert` 保留 `enabled` 与 `sessions` 两个属于用户的字段：装新版本不会把一个被关掉的 goapp 悄悄打开，也不会丢掉删除时清会话用的 IOU 清单。下载失败时**不动**已装的那份，只在提示里说清原因——升级失败不该把应用从用户手里拿走。
 
-**删除连包体一起删**（`manager/lib/download.js:removeUnpacked`）：注册表里删掉一条之外，它在 inbox 里的**那个目录**也一并删除——目录名用的是登记时记下的 `folder`，不是包名。这不是清理洁癖：`scanInbox` 读的正是这个目录，目录留着的话点一次「导入」就能把用户刚删掉的 goapp 复活；顺带也省掉最多 32 MiB 的解包内容。
+**删除连包体一起删**（`manager/lib/download.js:removeUnpacked`）：注册表里删掉一条之外，它在 inbox 里的目录也一并删除——目录名用的是登记时记下的 `folder`，以及所有同包名/同 id 的兄弟目录（见下下条）。这不是清理洁癖：`scanInbox` 读的正是这些目录，留着的话点一次「导入」就能把用户刚删掉的 goapp 复活；顺带也省掉最多 32 MiB 的解包内容。
 
 为什么记 `folder` 而不是用包名倒推：商店安装的目录名是清洗过的包名，但**手工放进 inbox 的包保留用户解压出来的目录名**（`my-word/` 里装着 `goapp-demo-word`）。只按包名删，删的是一个不存在的路径，真正的目录留着——正好回到上面那个「删了又活」的毛病。所以 `import.readPackage` 把 `path.basename(dir)` 记进注册表，`remove` 原样使用。这个字段来自磁盘、又会直接用于删除，`registry.parse` 只接受单段安全名（`[A-Za-z0-9._-]+`，且不是 `.`/`..`），其余一律丢弃并回落到 `folderFor(package)`——手改注册表写 `"../../keep"` 删不到 inbox 之外的东西（`test/goapp.test.js` 有用例钉住）。
 
-**同一个 id 被两个不同的包抢**（`registry.upsert` + `index.js:dropDisplaced`）：id 是普通单词（`word`），不是带限定名的标识，两个作者撞车是能发生的。此时按「换了一个应用」处理：`enabled`/`sessions` 这些属于用户的字段**不继承**（否则新装的那个可能一上来就是被停用状态，还背着别人的会话欠账），并且失败那一方的 inbox 目录被删除——它已经没有任何入口，留着只会被「导入」再次抢回同一个 id。
+**同一个 id 被两个不同的包抢**（`registry.upsert` + `index.js:dropDisplaced`）：id 是普通单词（`word`），不是带限定名的标识，两个作者撞车是能发生的。此时按「换了一个应用」处理：`enabled`/`sessions` 这些属于用户的字段**不继承**（否则新装的那个可能一上来就是被停用状态，还背着别人的会话欠账）。两个目录同时躺在 inbox 里时新的那个赢（见下条），旧的那个不动——它可能正是用户手工解压进来准备对比的版本；但**删除时两个都删**（`inboxFoldersFor` 按 id 收集目录），删掉 `word` 之后抢过这个 id 的另一份包也不会被「导入」复活。
+
+**同一个包在 inbox 里有两份**（`import.scanInboxDetailed`）：商店装上的是清洗过的包名目录，用户手工解压的是他自己的目录名，两者可以同时存在。`scanInbox` 若不过滤，`install`/`import` 会在两份之间来回跳，`remove` 只删登记的那份，剩下的立刻被「导入」复活。规则：**一个包（包名，无名时退化成 id）只算一份，目录 mtime 最新的代表它**（mtime 相同按目录名排序，跨平台结果一致）；输的那份**只计数不删除**（提示写「跳过重复 N」），删用户手工放进去的文件不归这个函数管。再按 id 折一次，两份不同的包抢同一个 id 时 `find(id)` 也不歧义。
+
+**写不进去要有稳定原因，不能把异常抛给宿主**（`index.js:tryWrite`）：注册表可能因为只读 home、磁盘满、`goapps` 被换成文件（`ENOTDIR`）而写不进去。四个 action 都走 `tryWrite`，失败回一条 `保存失败: <err.code> — <goapp 名>` 的 toast，不静默、不冒充成功。顺序也有讲究：`remove` 先存盘再删文件（存不进去一个字节都不删，注册表里还列着它，用户仍能打开）；`install` 相反，包体已经落进 inbox 才写注册表，写失败只丢登记，点一次「导入」就回来，不必重下。
 
 ## 4. 注册表（已实现）
 
@@ -78,7 +82,7 @@ my-goapp/
 ```
 
 - `package` / `entry` / `folder`：跨包打开面板（`<package>/<panel id>`）、以及删除时定位 inbox 目录，都靠这三个字段；老注册表没有时按空处理，不会崩。
-- 写：临时文件 + `rename`（原子）。
+- 写：临时文件 + `rename`（原子）；写不进去（只读 home、磁盘满、`ENOTDIR`）由 action 层回 `保存失败: <code>` 的 toast，不抛异常给宿主。
 - 读：解析失败 = 空注册表，不抛异常（坏文件不会让面板变白）。
 - 实现：`plugins/goapp/manager/lib/registry.js`（`load/save/upsert/remove/setEnabled/noteSession`）。
 
