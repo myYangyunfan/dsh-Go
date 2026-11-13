@@ -7,7 +7,7 @@
 // registry still answers over `ctx.dshGo`-less calls to `apply` (tests).
 import { load, noteSession, remove as removeEntry, save, setEnabled, upsert } from './registry.js'
 import { download, removeUnpacked } from './download.js'
-import { scanInbox } from './import.js'
+import { scanInbox, scanInboxDetailed, inboxFoldersFor } from './import.js'
 import { loadStore, versionNewer } from './store.js'
 import { goappData, goappView, words } from './view.js'
 
@@ -52,6 +52,27 @@ export function apply(ctx, options = {}) {
     save(next, env)
     return next
   }
+  /**
+   * Save, and report a refusal instead of throwing into the host. A registry
+   * that cannot be written (read-only home, full disk, ENOTDIR because
+   * `goapps` is a file) must come back as a stable reason the user can read:
+   * AGENTS.md asks for a stable error and no silent swallow, and an exception
+   * here would surface as an unexplained panel failure.
+   * @returns {null | string} the error code, or null when the write landed
+   */
+  const tryWrite = (next) => {
+    try {
+      save(next, env)
+      return null
+    } catch (error) {
+      return typeof error?.code === 'string' && error.code !== '' ? error.code : 'ERROR'
+    }
+  }
+  /** The one toast an action returns when nothing could be saved. */
+  const failed = (code, w, detail = '') => [
+    { type: 'toast', text: `${w.writeFailed}: ${code}${detail === '' ? '' : ` — ${detail}`}` },
+    { type: 'refresh' },
+  ]
 
   ctx.inject(['dshGo'], (ctx) => {
     ctx.dshGo.panel('goapps', {
@@ -63,25 +84,31 @@ export function apply(ctx, options = {}) {
       actions: {
         /** Flip one goapp's enabled flag. */
         toggle: (scope, event) => {
+          const w = words(event?.locale)
           const id = idOf(event)
-          if (id === '') return [{ type: 'toast', text: words(event?.locale).removed }]
+          if (id === '') return [{ type: 'toast', text: w.removed }]
           const registry = read()
           const current = registry.goapps.find((g) => g.id === id)
           if (current === undefined) return [{ type: 'toast', text: `${id} — not installed` }]
-          write(setEnabled(registry, id, !current.enabled))
+          const code = tryWrite(setEnabled(registry, id, !current.enabled))
+          if (code !== null) return failed(code, w, current.name)
           return [{ type: 'refresh' }]
         },
 
-        /** Remove a goapp and forget the sessions it opened. */
+        /** Remove a goapp, the folders it lives in, and the sessions it opened. */
         remove: (scope, event) => {
+          const w = words(event?.locale)
           const id = idOf(event)
           if (id === '') return []
           const { next, gone } = removeEntry(read(), id)
           if (gone === undefined) return []
-          write(next)
-          removeUnpacked(env, gone.package ?? gone.id, gone.folder)
+          // The files go only after the registry forgot the goapp: a failed save
+          // that deleted them first would leave a listing whose package is gone.
+          const code = tryWrite(next)
+          if (code !== null) return failed(code, w, gone.name)
+          for (const folder of inboxFoldersFor(gone, env)) removeUnpacked(env, gone.package ?? gone.id, folder)
           return [
-            { type: 'toast', text: `${words(event?.locale).removed} ${gone.name} (${gone.sessions.length})` },
+            { type: 'toast', text: `${w.removed} ${gone.name} (${gone.sessions.length})` },
             { type: 'refresh' },
           ]
         },
@@ -148,25 +175,39 @@ export function apply(ctx, options = {}) {
           // files of the package that lost the id are removed instead of being
           // left in the inbox for 导入 to resurrect.
           dropDisplaced(env, read(), local)
-          write(upsert(read(), local))
+          // The bytes are already in the inbox at this point, so a refused save
+          // costs the registry entry, not the download: 导入 picks it up later.
+          const code = tryWrite(upsert(read(), local))
+          if (code !== null) return failed(code, w, local.name)
           return [
             { type: 'toast', text: `${replacing ? w.updated_one : w.installed_one} ${local.name}` },
             { type: 'refresh' },
           ]
         },
 
-        /** Register every goapp package dropped into $DSH_HOME/goapps/inbox. */
+        /**
+         * Register every goapp package dropped into $DSH_HOME/goapps/inbox.
+         * Folders holding the same package are one goapp: the newest folder is
+         * registered and the rest are reported as ignored, not deleted.
+         */
         import: (scope, event) => {
-          const found = scanInbox(env)
-          if (found.length === 0) return [{ type: 'toast', text: `${words(event?.locale).imported} 0` }]
+          const w = words(event?.locale)
+          const { entries: found, duplicates } = scanInboxDetailed(env)
+          if (found.length === 0) {
+            return [{ type: 'toast', text: `${w.imported} 0${duplicates === 0 ? '' : ` (${w.duplicates} ${duplicates})`}` }]
+          }
           let registry = read()
           for (const entry of found) {
             dropDisplaced(env, registry, entry)
             registry = upsert(registry, entry)
           }
-          write(registry)
+          const code = tryWrite(registry)
+          if (code !== null) return failed(code, w)
           return [
-            { type: 'toast', text: `${words(event?.locale).imported} ${found.length}` },
+            {
+              type: 'toast',
+              text: `${w.imported} ${found.length}${duplicates === 0 ? '' : ` (${w.duplicates} ${duplicates})`}`,
+            },
             { type: 'refresh' },
           ]
         },
