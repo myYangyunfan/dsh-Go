@@ -56,6 +56,8 @@ my-goapp/
 
 商店包的发布约定：归档是 `.tar.gz`，条目放在**归档根**（`package.json` 在顶层，不再套一层目录），文件落到 `plugins/goapp/store/<package>-<version>.tar.gz`，索引条目写它的 raw URL 与 sha256。`go单词` 就是按这个约定发布的，索引里的 URL 匿名可下载、sha256 与实际字节一致——所以商店的第一次安装是真下载，不是本地登记。仓库里现在同时存着 `goapp-demo-word-0.1.0.tar.gz` 与 `goapp-demo-word-0.2.0.tar.gz`：索引指向 0.2.0，旧包留给「安装同时是更新」这条路做真机验证（先用旧包导入，再从商店升级）。
 
+**打包不是手工活**（`tools/pack.mjs`）：`node plugins/goapp/tools/pack.mjs <包目录> --base-url <商店 raw 前缀> --json` 直接产出归档与索引条目。归档是**字节稳定**的——条目按路径排序、mtime 固定 0、权限 0644、gzip 头不带时间戳，所以同一份源码在任何机器上都得到同一个 sha256；不这样的话，每次换机器打包都要改索引，而索引里的 sha256 是安装时唯一的信任锚。工具同时把住清单门槛（无 `dshGoGoapp.id`、版本号不是 `x.y.z[-pre]`、缺 `package.json` 一律拒绝）与容量上限（超过 32 MiB 的安装上限直接拒绝）。`tools/test/pack.test.js` 把两件事钉成测试：已发布归档 == 由源码打出来的字节，索引 sha256 == 已发布字节——改了 `demo-word` 却忘了重打商店包，测试会红而不是等用户装到一个 sha 校验失败。
+
 **安装同时是更新**（`manager/lib/store.js:versionNewer`）：`install` 先看 inbox 里已有的那份，只在商店版本**更新**时才下载覆盖；版本相同或商店更旧则不动，不降级。比较按点分数字核心（`1.0.10 > 1.0.9`，缺位算 0），正式版压过自己的预发布（`1.0.0 > 1.0.0-beta.2`），但预发布之间不排序——那是发布方的调用，管理器不猜。更新沿用同一个 id，`registry.upsert` 保留 `enabled` 与 `sessions` 两个属于用户的字段：装新版本不会把一个被关掉的 goapp 悄悄打开，也不会丢掉删除时清会话用的 IOU 清单。下载失败时**不动**已装的那份，只在提示里说清原因——升级失败不该把应用从用户手里拿走。
 
 **删除连包体一起删**（`manager/lib/download.js:removeUnpacked`）：注册表里删掉一条之外，`$DSH_HOME/goapps/inbox/<package>` 目录也一并删除。这不是清理洁癖——`scanInbox` 读的正是这个目录，目录留着的话点一次「导入」就能把用户刚删掉的 goapp 复活；顺带也省掉最多 32 MiB 的解包内容。目录名先经 `folderFor` 清洗，`..`、绝对路径传不进 inbox 之外。
