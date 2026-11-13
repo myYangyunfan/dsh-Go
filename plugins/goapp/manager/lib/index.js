@@ -27,6 +27,21 @@ function panelRef(entry) {
 }
 
 /**
+ * Before `next` takes an id, drop the files of a *different* package that holds
+ * it. Ids are plain words (`word`), so two authors can pick the same one; the
+ * losing package keeps nothing the user can reach, and leaving its folder in the
+ * inbox would let 导入 bring it back. Same package (or unknown on either side)
+ * is an update, not a displacement.
+ */
+function dropDisplaced(env, registry, next) {
+  const previous = registry.goapps.find((g) => g.id === next.id)
+  if (previous === undefined) return
+  if (previous.package === '' || next.package === '') return
+  if (previous.package === next.package) return
+  removeUnpacked(env, previous.package, previous.folder)
+}
+
+/**
  * @param {any} ctx
  * @param {{ env?: Record<string, string | undefined>, fetch?: typeof fetch }} [options] for tests
  */
@@ -64,7 +79,7 @@ export function apply(ctx, options = {}) {
           const { next, gone } = removeEntry(read(), id)
           if (gone === undefined) return []
           write(next)
-          removeUnpacked(env, gone.package ?? gone.id)
+          removeUnpacked(env, gone.package ?? gone.id, gone.folder)
           return [
             { type: 'toast', text: `${words(event?.locale).removed} ${gone.name} (${gone.sessions.length})` },
             { type: 'refresh' },
@@ -128,6 +143,11 @@ export function apply(ctx, options = {}) {
               ? [{ type: 'toast', text: `${w.notDownloaded}: ${id}` }]
               : [{ type: 'toast', text: `${w.notDownloaded}: ${id}` }, { type: 'refresh' }]
           }
+          // A different package can claim the same id (ids are plain words, not
+          // qualified names). Then nothing of the user's carries over, and the
+          // files of the package that lost the id are removed instead of being
+          // left in the inbox for 导入 to resurrect.
+          dropDisplaced(env, read(), local)
           write(upsert(read(), local))
           return [
             { type: 'toast', text: `${replacing ? w.updated_one : w.installed_one} ${local.name}` },
@@ -140,7 +160,10 @@ export function apply(ctx, options = {}) {
           const found = scanInbox(env)
           if (found.length === 0) return [{ type: 'toast', text: `${words(event?.locale).imported} 0` }]
           let registry = read()
-          for (const entry of found) registry = upsert(registry, entry)
+          for (const entry of found) {
+            dropDisplaced(env, registry, entry)
+            registry = upsert(registry, entry)
+          }
           write(registry)
           return [
             { type: 'toast', text: `${words(event?.locale).imported} ${found.length}` },
