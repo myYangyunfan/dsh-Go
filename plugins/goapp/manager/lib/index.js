@@ -89,7 +89,7 @@ export function apply(ctx, options = {}) {
           if (id === '') return [{ type: 'toast', text: w.removed }]
           const registry = read()
           const current = registry.goapps.find((g) => g.id === id)
-          if (current === undefined) return [{ type: 'toast', text: `${id} — not installed` }]
+          if (current === undefined) return [{ type: 'toast', text: `${w.notInstalled}: ${id}` }]
           const code = tryWrite(setEnabled(registry, id, !current.enabled))
           if (code !== null) return failed(code, w, current.name)
           return [{ type: 'refresh' }]
@@ -119,7 +119,8 @@ export function apply(ctx, options = {}) {
           const id = idOf(event)
           if (id === '') return []
           const current = read().goapps.find((g) => g.id === id)
-          if (current !== undefined && current.enabled === false) {
+          if (current === undefined) return [{ type: 'toast', text: `${w.notInstalled}: ${id}` }]
+          if (current.enabled === false) {
             return [{ type: 'toast', text: `${w.disabled}: ${current.name}` }]
           }
           const target = panelRef(current)
