@@ -6,7 +6,8 @@
   "type": "module",
   "bin": { "goapp-pack": "./pack.mjs" },
   "scripts": {
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "verify": "node verify.mjs"
   },
   "engines": {
     "node": ">=22.19"
