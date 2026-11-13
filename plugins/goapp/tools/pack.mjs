@@ -110,6 +110,32 @@ export function packDirectory(dir) {
   const files = listFiles(dir)
   if (!files.includes('package.json')) throw new Error('package.json must sit at the archive root')
 
+  // A published goapp has to be openable. `entry` is what the App resolves when
+  // the icon is tapped, so a typo here packs fine, installs fine, and only fails
+  // at the tap — where the author is not looking. `panel:<id>` must name a panel
+  // this package declares; anything else must be a file that actually ships.
+  const entry = typeof marker.entry === 'string' ? marker.entry.trim() : ''
+  if (entry === '') throw new Error('package.json needs dshGoGoapp.entry — the panel or page the icon opens')
+  const panels = manifest?.dshGo?.contributes?.panels
+  const panelIds = Array.isArray(panels) ? panels.map((p) => p?.id).filter((id) => typeof id === 'string') : []
+  if (entry.startsWith('panel:')) {
+    const id = entry.slice('panel:'.length)
+    if (id === '') throw new Error('dshGoGoapp.entry is "panel:" with no panel id')
+    if (!panelIds.includes(id)) {
+      throw new Error(
+        `dshGoGoapp.entry names panel:${id}, but dshGo.contributes.panels declares ${panelIds.length === 0 ? 'no panels' : panelIds.join(', ')}`,
+      )
+    }
+  } else if (!files.includes(entry)) {
+    throw new Error(`dshGoGoapp.entry is ${entry}, which the package does not contain`)
+  }
+  if (marker.kind === 'native' && !entry.startsWith('panel:')) {
+    throw new Error(`a native goapp opens a panel, but dshGoGoapp.entry is ${entry}`)
+  }
+  if (marker.kind === 'web' && entry.startsWith('panel:')) {
+    throw new Error(`a web goapp opens a page, but dshGoGoapp.entry is ${entry}`)
+  }
+
   const blocks = []
   for (const rel of files) {
     const data = fs.readFileSync(path.join(dir, rel))
