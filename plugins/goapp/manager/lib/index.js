@@ -6,7 +6,7 @@
 // the dsh-go bridge the `ctx.inject(['dshGo'], …)` callback never runs and the
 // registry still answers over `ctx.dshGo`-less calls to `apply` (tests).
 import { load, noteSession, remove as removeEntry, save, setEnabled, upsert } from './registry.js'
-import { download } from './download.js'
+import { download, removeUnpacked } from './download.js'
 import { scanInbox } from './import.js'
 import { loadStore, versionNewer } from './store.js'
 import { goappData, goappView, words } from './view.js'
@@ -64,6 +64,7 @@ export function apply(ctx, options = {}) {
           const { next, gone } = removeEntry(read(), id)
           if (gone === undefined) return []
           write(next)
+          removeUnpacked(env, gone.package ?? gone.id)
           return [
             { type: 'toast', text: `${words(event?.locale).removed} ${gone.name} (${gone.sessions.length})` },
             { type: 'refresh' },
