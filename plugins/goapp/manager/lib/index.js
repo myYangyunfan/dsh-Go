@@ -8,7 +8,7 @@
 import { load, noteSession, remove as removeEntry, save, setEnabled, upsert } from './registry.js'
 import { download } from './download.js'
 import { scanInbox } from './import.js'
-import { loadStore } from './store.js'
+import { loadStore, versionNewer } from './store.js'
 import { goappData, goappView, words } from './view.js'
 
 export const name = 'dsh-go-goapp'
@@ -93,28 +93,39 @@ export function apply(ctx, options = {}) {
         /**
          * Install one store entry: register it from the inbox, or — when the
          * listing carries `url` + `sha256` — download and unpack it first. The
-         * download is awaited, so the panel shows the real outcome rather than
-         * a toast that later turns out to be wrong.
+         * same action updates: a store version newer than the unpacked one is
+         * downloaded over it, so the store button is not a no-op after the
+         * first install. A failed download keeps the installed copy.
          */
         install: async (scope, event) => {
           const w = words(event?.locale)
           const id = idOf(event)
           if (id === '') return []
-          let local = scanInbox(env).find((entry) => entry.id === id)
-          if (local === undefined) {
-            const listing = loadStore(env).goapps.find((entry) => entry.id === id)
-            if (listing === undefined) return [{ type: 'toast', text: `${w.notDownloaded}: ${id}` }]
+          const listing = loadStore(env).goapps.find((entry) => entry.id === id)
+          const scan = () => scanInbox(env).find((entry) => entry.id === id)
+          let local = scan()
+          const replacing = local !== undefined
+          const remote = listing !== undefined && typeof listing.url === 'string' && listing.url !== ''
+          if (remote && (local === undefined || versionNewer(listing.version, local.version))) {
             const got = await download(listing, env, { fetchImpl: options.fetch })
             if (!got.ok) {
               const why = got.reason === 'no-url' ? w.notDownloaded : `${w.downloadFailed}: ${got.reason}`
-              return [{ type: 'toast', text: `${why} (${id})` }, { type: 'refresh' }]
+              return local === undefined
+                ? [{ type: 'toast', text: `${why} (${id})` }, { type: 'refresh' }]
+                : [{ type: 'toast', text: `${why} (${id}) — ${w.installed_one} ${local.name}` }]
             }
-            local = scanInbox(env).find((entry) => entry.id === id)
-            if (local === undefined) return [{ type: 'toast', text: `${w.notDownloaded}: ${id}` }]
+            local = scan()
+          }
+          if (local === undefined) {
+            // Nothing landed: a listing without a url cannot install by itself,
+            // and an id the store does not know changed nothing at all.
+            return listing === undefined
+              ? [{ type: 'toast', text: `${w.notDownloaded}: ${id}` }]
+              : [{ type: 'toast', text: `${w.notDownloaded}: ${id}` }, { type: 'refresh' }]
           }
           write(upsert(read(), local))
           return [
-            { type: 'toast', text: `${w.installed_one} ${local.name}` },
+            { type: 'toast', text: `${replacing ? w.updated_one : w.installed_one} ${local.name}` },
             { type: 'refresh' },
           ]
         },
