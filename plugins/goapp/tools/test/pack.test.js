@@ -30,7 +30,11 @@ const baseManifest = {
   version: '1.2.3',
   description: 'fixture',
   dshGoGoapp: { id: 'fixture', kind: 'native', entry: 'panel:fixture' },
-  dshGo: { v: 1, title: { zh: '样例', en: 'fixture' } },
+  dshGo: {
+    v: 1,
+    title: { zh: '样例', en: 'fixture' },
+    contributes: { panels: [{ id: 'fixture', title: { zh: '样例', en: 'fixture' } }] },
+  },
 }
 
 test('packing the same directory twice produces the same bytes', () => {
@@ -106,7 +110,7 @@ test('a locale title map lists under its Chinese label, never the object', () =>
   assert.equal(entry.name, '样例', 'a {zh,en} title lists as text, not as [object Object]')
   assert.equal(entry.url, null, 'no base URL means no download, not a broken one')
 
-  const untitled = fixture({ ...baseManifest, dshGo: { v: 1 } }, { 'lib/index.js': 'x\n' })
+  const untitled = fixture({ ...baseManifest, dshGo: { v: 1, contributes: baseManifest.dshGo.contributes } }, { 'lib/index.js': 'x\n' })
   const plain = packDirectory(untitled)
   assert.equal(indexEntry({ manifest: plain.manifest, buffer: plain.buffer, file: 'x.tar.gz' }).name, 'goapp-fixture')
 })
@@ -123,6 +127,50 @@ test('packing refuses a package the store cannot install', () => {
 
   const noMarker = fixture({ name: 'x', version: '1.0.0' }, { 'lib/index.js': 'x\n' })
   assert.throws(() => packDirectory(noMarker), /dshGoGoapp\.id/)
+})
+
+test('packing refuses an entry the app could not open', () => {
+  const noEntry = fixture({ ...baseManifest, dshGoGoapp: { id: 'fixture', kind: 'native' } }, { 'lib/index.js': 'x\n' })
+  assert.throws(() => packDirectory(noEntry), /dshGoGoapp\.entry/)
+
+  const wrongPanel = fixture(
+    { ...baseManifest, dshGoGoapp: { id: 'fixture', kind: 'native', entry: 'panel:words' } },
+    { 'lib/index.js': 'x\n' },
+  )
+  assert.throws(() => packDirectory(wrongPanel), /names panel:words.*declares fixture/)
+
+  const noPanels = fixture(
+    { ...baseManifest, dshGoGoapp: { id: 'fixture', kind: 'native', entry: 'panel:fixture' }, dshGo: { v: 1 } },
+    { 'lib/index.js': 'x\n' },
+  )
+  assert.throws(() => packDirectory(noPanels), /declares no panels/)
+
+  const missingPage = fixture(
+    { ...baseManifest, dshGoGoapp: { id: 'fixture', kind: 'web', entry: 'web/index.html' } },
+    { 'lib/index.js': 'x\n' },
+  )
+  assert.throws(() => packDirectory(missingPage), /does not contain/)
+
+  const nativeWebEntry = fixture(
+    { ...baseManifest, dshGoGoapp: { id: 'fixture', kind: 'native', entry: 'lib/index.js' } },
+    { 'lib/index.js': 'x\n' },
+  )
+  assert.throws(() => packDirectory(nativeWebEntry), /a native goapp opens a panel/)
+
+  const webPanelEntry = fixture(
+    { ...baseManifest, dshGoGoapp: { id: 'fixture', kind: 'web', entry: 'panel:fixture' } },
+    { 'lib/index.js': 'x\n' },
+  )
+  assert.throws(() => packDirectory(webPanelEntry), /a web goapp opens a page/)
+})
+
+test('a web goapp packs when its page ships', () => {
+  const dir = fixture(
+    { ...baseManifest, dshGoGoapp: { id: 'fixture', kind: 'web', entry: 'web/index.html' }, dshGo: { v: 1 } },
+    { 'web/index.html': '<!doctype html>' },
+  )
+  const { files } = packDirectory(dir)
+  assert.ok(files.includes('web/index.html'))
 })
 
 test('the committed demo artifact matches the demo sources', () => {
