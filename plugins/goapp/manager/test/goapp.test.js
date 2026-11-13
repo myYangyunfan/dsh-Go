@@ -324,7 +324,7 @@ test('a different package claiming the same id inherits nothing from it', () => 
   assert.deepEqual(reg.goapps[0].sessions, [], 'nor inherit sessions it never opened')
 })
 
-test('import replaces the files of a displaced package holding the same id', () => {
+test('a second package claiming the same id takes it over, and remove clears both folders', () => {
   const env = tempEnv()
   const first = drop(env, 'a-pkg', {
     name: 'a-pkg',
@@ -336,6 +336,10 @@ test('import replaces the files of a displaced package holding the same id', () 
     version: '1.0.0',
     dshGoGoapp: { id: 'w', kind: 'native', entry: 'panel:w' },
   })
+  // Two different packages, one id: the newest folder is the one that holds it.
+  // Stated with mtimes so the assertion does not depend on the filesystem clock.
+  age(first, 10)
+  age(second, 20)
   const { ctx, panels } = fakeCtx()
   apply(ctx, { env })
 
@@ -345,5 +349,108 @@ test('import replaces the files of a displaced package holding the same id', () 
   assert.equal(registry.length, 1, 'one id, one entry')
   assert.equal(registry[0].folder, 'b-pkg')
   assert.equal(fs.existsSync(second), true)
-  assert.equal(fs.existsSync(first), false, 'the displaced package cannot stay around for 导入')
+  assert.equal(fs.existsSync(first), true, 'the losing package keeps its files until the id is removed')
+
+  // While the id is taken, the loser cannot come back: it is not what 导入 picks.
+  assert.match(panels.goapps.actions.import(null, { locale: 'zh' })[0].text, /跳过重复 1/)
+
+  panels.goapps.actions.remove(null, { id: 'w', locale: 'zh' })
+
+  assert.equal(fs.existsSync(second), false, 'the goapp\'s own folder goes')
+  assert.equal(fs.existsSync(first), false, 'and so does the folder that had claimed the same id')
+  assert.match(panels.goapps.actions.import(null, { locale: 'zh' })[0].text, /已导入 0/, 'nothing left to resurrect')
+})
+
+/** Give a folder a distinct mtime so "newest wins" is decided by the test, not by the clock. */
+function age(dir, seconds) {
+  const when = 1_600_000_000 + seconds
+  fs.utimesSync(dir, when, when)
+}
+
+test('two folders holding the same package are one goapp, and the newest folder wins', () => {
+  const env = tempEnv()
+  const pkg = { name: 'goapp-demo-word', version: '0.2.2', dshGoGoapp: { id: 'word', kind: 'native', entry: 'panel:word' } }
+  const older = drop(env, 'aaa-word', pkg)
+  const newer = drop(env, 'zzz-word', pkg)
+  age(older, 10)
+  age(newer, 20)
+  assert.equal(scanInbox(env).length, 1, 'the same package must not be listed twice')
+
+  const { ctx, panels } = fakeCtx()
+  apply(ctx, { env })
+  const toast = panels.goapps.actions.import(null, { locale: 'zh' })[0].text
+
+  const registry = load(env).goapps
+  assert.equal(registry.length, 1)
+  assert.equal(registry[0].folder, 'zzz-word', 'the newest folder represents the package')
+  assert.match(toast, /已导入 1/, 'one goapp was registered')
+  assert.match(toast, /跳过重复 1/, 'the ignored folder is reported, not silently dropped')
+  assert.equal(fs.existsSync(older), true, 'the loser is left alone: it may be a build the user unzipped')
+})
+
+test('the same package under the same mtime folds deterministically, not by listing order', () => {
+  const env = tempEnv()
+  const pkg = { name: 'goapp-demo-word', version: '0.2.2', dshGoGoapp: { id: 'word', kind: 'native', entry: 'panel:word' } }
+  const a = drop(env, 'b-word', pkg)
+  const b = drop(env, 'a-word', pkg)
+  age(a, 5)
+  age(b, 5)
+  assert.deepEqual(scanInbox(env).map((e) => e.folder), ['a-word'], 'ties break on the folder name')
+})
+
+test('remove deletes every folder of the package, so a twin cannot resurrect it', () => {
+  const env = tempEnv()
+  const pkg = { name: 'goapp-demo-word', version: '0.2.2', dshGoGoapp: { id: 'word', kind: 'native', entry: 'panel:word' } }
+  const first = drop(env, 'my-word', pkg)
+  const second = drop(env, 'goapp-demo-word', pkg)
+  age(first, 10)
+  age(second, 20)
+  const { ctx, panels } = fakeCtx()
+  apply(ctx, { env })
+  panels.goapps.actions.import(null, { locale: 'zh' })
+
+  panels.goapps.actions.remove(null, { id: 'word', locale: 'zh' })
+
+  assert.equal(fs.existsSync(first), false, 'the twin folder has to go too')
+  assert.equal(fs.existsSync(second), false)
+  assert.match(panels.goapps.actions.import(null, { locale: 'zh' })[0].text, /已导入 0/, 'nothing left to resurrect')
+})
+
+test('a registry that cannot be written answers with a toast, not an exception', () => {
+  const env = tempEnv()
+  save(
+    upsert(empty(), { id: 'word', name: '词', version: '0.1.0', package: 'goapp-demo-word', kind: 'native', entry: 'panel:word', enabled: true, installedAt: 1, sessions: [] }),
+    env,
+  )
+  // A directory where save() wants its temp file makes the write fail with EISDIR
+  // while the registry itself stays readable — the only broken part is the write.
+  fs.mkdirSync(`${registryPath(env)}.tmp`, { recursive: true })
+  const { ctx, panels } = fakeCtx()
+  apply(ctx, { env })
+
+  const effects = panels.goapps.actions.toggle(null, { id: 'word', locale: 'zh' })
+
+  assert.equal(effects[0].type, 'toast')
+  assert.match(effects[0].text, /保存失败: EISDIR/, 'a stable code, so the user can tell why nothing changed')
+  assert.match(effects[0].text, /词/, 'and which goapp it was about')
+  assert.equal(load(env).goapps[0].enabled, true, 'a refused write must not look like a flip')
+})
+
+test('a refused save on remove keeps the files, so the goapp is still openable', () => {
+  const env = tempEnv()
+  const dir = drop(env, 'my-word', {
+    name: 'goapp-demo-word',
+    version: '0.2.2',
+    dshGoGoapp: { id: 'word', kind: 'native', entry: 'panel:word' },
+  })
+  const { ctx, panels } = fakeCtx()
+  apply(ctx, { env })
+  panels.goapps.actions.import(null, { locale: 'zh' })
+  fs.mkdirSync(`${registryPath(env)}.tmp`, { recursive: true })
+
+  const effects = panels.goapps.actions.remove(null, { id: 'word', locale: 'zh' })
+
+  assert.match(effects[0].text, /保存失败/)
+  assert.equal(fs.existsSync(dir), true, 'the registry still lists it, so its files must stay')
+  assert.equal(load(env).goapps.length, 1, 'the goapp is still installed')
 })
