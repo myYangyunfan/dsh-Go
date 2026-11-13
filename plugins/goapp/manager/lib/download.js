@@ -55,8 +55,14 @@ export function readTar(buffer) {
 
 /**
  * Unpack a `.tar.gz` payload into `$DSH_HOME/goapps/inbox/<folder>`. The folder
- * is built beside the target and renamed into place, so an interrupted download
- * never leaves a half package for `scanInbox` to read.
+ * is built in the staging directory `inbox/.tmp` and renamed into place, so an
+ * interrupted download never leaves a half package for `scanInbox` to read.
+ *
+ * Staging is a dot folder on purpose: `scanInbox` skips dot names, so even a
+ * run that is killed mid-write cannot be mistaken for a package. Emptying the
+ * whole staging directory before writing also clears whatever an earlier abort
+ * left behind. That is safe because unpacking is synchronous and this is its
+ * only writer — no other unpack can be mid-flight while this line runs.
  */
 export function unpackTarGz(payload, folder, env = process.env) {
   let files
@@ -69,10 +75,12 @@ export function unpackTarGz(payload, folder, env = process.env) {
   for (const file of files) if (unsafe(file.name)) return { ok: false, reason: 'unsafe-path' }
   const inbox = inboxPath(env)
   const target = path.join(inbox, folder)
-  const temp = path.join(inbox, `.${folder}.${process.pid}`)
-  fs.rmSync(temp, { recursive: true, force: true })
+  const tempRoot = path.join(inbox, '.tmp')
+  const temp = path.join(tempRoot, folder)
   try {
     fs.mkdirSync(inbox, { recursive: true })
+    fs.rmSync(tempRoot, { recursive: true, force: true })
+    fs.mkdirSync(tempRoot, { recursive: true })
     for (const file of files) {
       const dest = path.join(temp, file.name)
       fs.mkdirSync(path.dirname(dest), { recursive: true })
@@ -81,9 +89,10 @@ export function unpackTarGz(payload, folder, env = process.env) {
     fs.rmSync(target, { recursive: true, force: true })
     fs.renameSync(temp, target)
   } catch {
-    fs.rmSync(temp, { recursive: true, force: true })
+    fs.rmSync(tempRoot, { recursive: true, force: true })
     return { ok: false, reason: 'write' }
   }
+  fs.rmSync(tempRoot, { recursive: true, force: true })
   return { ok: true, dir: target }
 }
 
