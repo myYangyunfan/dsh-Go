@@ -101,8 +101,9 @@ adb shell am start -a android.intent.action.VIEW -d "dshgo://open/panel/goapp-de
     {
       "id": "word",
       "name": "go单词",
-      "version": "0.1.0",
+      "version": "0.2.2",
       "package": "goapp-demo-word",
+      "folder": "goapp-demo-word",
       "entry": "panel:word",
       "kind": "native",
       "enabled": true,
@@ -114,5 +115,12 @@ adb shell am start -a android.intent.action.VIEW -d "dshgo://open/panel/goapp-de
 ```
 
 `package` 与 `entry` 是能「全屏打开」的前提：管理器用它们拼出 `<package>/<panel id>`。
-写入走临时文件 + rename，中途被杀不会截断。删除 goapp 时把登记的 `sessions` 一并从注册表移除
+`folder` 是它在 inbox 里的目录名——手工放进 inbox 的包保留用户解压出来的目录名，所以删除时不能拿包名
+去猜目录。这个字段会直接用于删除，因此只接受单段安全名（`[A-Za-z0-9._-]+`，不是 `.`/`..`），
+其余丢弃并回落到清洗过的包名，手改注册表删不到 inbox 之外。
+写入走临时文件 + rename，中途被杀不会截断。删除 goapp 时把它登记的 inbox 目录一并删除
+（目录留着的话，点一次「导入」就能把刚删掉的 goapp 复活），`sessions` 记录也从注册表移除
 （会话本身的删除由 App/引擎侧接口承担，见上表「未实现」）。
+
+同一个 id 被两个不同的包声明时按「换了一个应用」处理：`enabled`/`sessions` 不继承，
+被顶掉那一方的 inbox 目录随之删除。
