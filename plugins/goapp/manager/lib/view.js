@@ -1,5 +1,6 @@
 // View + data for the manager panel. `data.*` is filled by goappData, so a
 // toggle pushes a small patch instead of a new view.
+import { versionNewer } from './store.js'
 const WORDS = {
   zh: {
     installed: '已安装',
@@ -72,13 +73,15 @@ export function goappView(scope, caps) {
 
 /**
  * The data the view binds to. Language-neutral: ids, names and numbers only.
+ * An installed goapp only shows up in the store list when the store has a newer
+ * version, so the same row serves both "install" and "update".
  * @param {{ goapps: Array<any> }} registry
  * @param {{ goapps: Array<any> }} [store]
  */
 export function goappData(registry, store) {
   const goapps = Array.isArray(registry?.goapps) ? registry.goapps : []
   const catalog = Array.isArray(store?.goapps) ? store.goapps : []
-  const have = new Set(goapps.map((g) => g.id))
+  const have = new Map(goapps.map((g) => [g.id, g]))
   return {
     installed: String(goapps.length),
     enabled: String(goapps.filter((g) => g.enabled).length),
@@ -91,14 +94,30 @@ export function goappData(registry, store) {
       action: { id: 'open', args: { id: g.id } },
     })),
     store: catalog
-      .filter((g) => !have.has(g.id))
-      .map((g) => ({
-        title: g.name,
-        subtitle: g.summary,
-        trailing: g.version,
-        icon: 'download',
-        action: { id: 'install', args: { id: g.id } },
-      })),
+      .filter((g) => {
+        const mine = have.get(g.id)
+        return mine === undefined || versionNewer(g.version, mine.version)
+      })
+      .map((g) => {
+        const mine = have.get(g.id)
+        if (mine === undefined) {
+          return {
+            title: g.name,
+            subtitle: g.summary,
+            trailing: g.version,
+            icon: 'download',
+            action: { id: 'install', args: { id: g.id } },
+          }
+        }
+        return {
+          title: g.name,
+          subtitle: `${mine.version} → ${g.version}`,
+          trailing: g.version,
+          icon: 'refresh',
+          tone: 'good',
+          action: { id: 'install', args: { id: g.id } },
+        }
+      }),
   }
 }
 
