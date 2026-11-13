@@ -5,6 +5,7 @@ const WORDS = {
   zh: {
     installed: '已安装',
     enabled: '已启用',
+  disabled: '已停用',
     store: '商店',
     empty: '还没有 goapp。在商店安装，或从本地导入一个。',
     hint: '开启后可从桌面快捷方式直接进入；删除会连同它的会话一起清掉。',
@@ -22,6 +23,7 @@ const WORDS = {
   en: {
     installed: 'Installed',
     enabled: 'Enabled',
+  disabled: 'Disabled',
     store: 'Store',
     empty: 'No goapps yet. Install one from the store, or import a local one.',
     hint: 'Enabled goapps can be opened from a home-screen shortcut; removing one deletes its sessions too.',
