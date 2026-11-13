@@ -70,6 +70,8 @@ my-goapp/
 
 **解包先落在 `inbox/.tmp`，再改名就位**（`manager/lib/download.js:unpackTarGz`）：半成品不能出现在 `scanInbox` 能读到的位置。暂存目录是一个**点开头**的目录，而扫描只认非点目录——进程在解包途中被杀，留下的那一份 `package.json` 也不会被当成一个（残缺的）goapp 登记进来。每次解包开头清空整个 `inbox/.tmp`，把上次中断的残骸一并收掉；这么做安全的前提是解包全同步、且本插件是它唯一的写者，没有并发解包在跑。成功后暂存目录也清空，inbox 里只留下正式的包目录。
 
+**点不开的包要说明白**（`import.readPackage:entryOk` + `index.js:open`）：`entry` 指向的面板/页面必须真的存在——`panel:<id>` 要能在本包 `dshGo.contributes.panels[].id` 里找到，`web` 的 `entry` 要是解包时真实落盘的文件。打包工具在发布时就把这种包拒掉（见本节末），但手工解压导入没有这道门，所以扫描时顺手算一个 `entryOk` 记进注册表（老注册表没有这个字段，按可打开处理），`open` 遇到 `false` 回一条「入口打不开」，而不是打开一个空白屏让用户以为 App 坏了。
+
 **写不进去要有稳定原因，不能把异常抛给宿主**（`index.js:tryWrite`）：注册表可能因为只读 home、磁盘满、`goapps` 被换成文件（`ENOTDIR`）而写不进去。四个 action 都走 `tryWrite`，失败回一条 `保存失败: <err.code> — <goapp 名>` 的 toast，不静默、不冒充成功。顺序也有讲究：`remove` 先存盘再删文件（存不进去一个字节都不删，注册表里还列着它，用户仍能打开）；`install` 相反，包体已经落进 inbox 才写注册表，写失败只丢登记，点一次「导入」就回来，不必重下。
 
 ## 4. 注册表（已实现）
