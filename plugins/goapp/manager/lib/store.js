@@ -56,6 +56,33 @@ export function normalizeIndex(raw) {
 }
 
 /**
+ * Whether `next` is a newer version than `current`, by dotted numeric core
+ * (`1.0.10` > `1.0.9`, `1.1` > `1.0.9`). A release supersedes its own
+ * pre-releases (`1.0.0` > `1.0.0-beta.2`) and never the other way round, so an
+ * installed stable build is not replaced by a beta the store happens to list.
+ * Unparsable parts count as 0: `install` only ever moves forward.
+ */
+export function versionNewer(next, current) {
+  const core = (value) =>
+    String(value ?? '')
+      .split('-')[0]
+      .split('.')
+      .map((part) => {
+        const n = Number.parseInt(part, 10)
+        return Number.isFinite(n) ? n : 0
+      })
+  const a = core(next)
+  const b = core(current)
+  for (let i = 0; i < Math.max(a.length, b.length); i += 1) {
+    const x = a[i] ?? 0
+    const y = b[i] ?? 0
+    if (x !== y) return x > y
+  }
+  const pre = (value) => String(value ?? '').includes('-')
+  return pre(current) && !pre(next)
+}
+
+/**
  * The index the store page shows: the machine's own file when it exists, else
  * the bundled one. A broken file falls back to the bundled list rather than
  * showing an empty store.
