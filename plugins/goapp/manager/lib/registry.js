@@ -46,6 +46,9 @@ export function parse(text) {
       package: typeof g.package === 'string' ? g.package : '',
       folder: safeFolder(g.folder),
       entry: typeof g.entry === 'string' ? g.entry : '',
+      // Derived from the package's own manifest at scan time. A registry written
+      // before this field existed has no opinion, so it stays openable.
+      entryOk: g.entryOk !== false,
       kind: g.kind === 'web' ? 'web' : 'native',
       enabled: g.enabled !== false,
       installedAt: typeof g.installedAt === 'number' ? g.installedAt : 0,
