@@ -50,6 +50,8 @@ dsh plugin --profile web add <仓库路径>/plugins/goapp/demo-word
 
 装完在 App 里：设置 › 插件 › 已安装 › 重启内核以重载；然后从「全部功能 › 插件」打开 goapp 管理。
 
+桌面端只能验证到「逻辑对」这一层：快捷方式、深链、PRoot 启动都必须在真机上过一遍。照 [DEVICE-CHECK.md](DEVICE-CHECK.md) 走一遍，把表头和结果随 PR 一起贴出来——`CONTRIBUTING.md` 要求的 ABI / Android 版本 / 启动方式 / 机型缺一项，结论就不可复现。
+
 商店里的 `go单词` 指向 `plugins/goapp/store/goapp-demo-word-0.1.0.tar.gz`（raw URL + sha256 写在 `manager/data/index.json`），点「安装」会真下载、校验、解包进 `$DSH_HOME/goapps/inbox/` 再登记——不需要先手动放包。
 
 ## 从 App 外直达一个 goapp
