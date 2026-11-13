@@ -7,7 +7,7 @@ import path from 'node:path'
 import test from 'node:test'
 import zlib from 'node:zlib'
 
-import { download, folderFor, readTar, sha256, unpackTarGz } from '../lib/download.js'
+import { download, folderFor, readTar, removeUnpacked, sha256, unpackTarGz } from '../lib/download.js'
 import { inboxPath, scanInbox } from '../lib/import.js'
 import { apply } from '../lib/index.js'
 import { empty, load, save, upsert } from '../lib/registry.js'
@@ -275,4 +275,22 @@ test('a failed update keeps the installed copy', async () => {
   assert.match(effects[0].text, /Download failed: checksum/)
   assert.equal(load(env).goapps[0].version, '0.1.0')
   assert.equal(fs.existsSync(path.join(inboxPath(env), 'goapp-demo-word', 'package.json')), true)
+})
+
+test('removeUnpacked stays inside the inbox and ignores an empty name', () => {
+  const env = tempEnv()
+  fs.mkdirSync(path.join(inboxPath(env), 'escape'), { recursive: true })
+  const outside = path.join(env.dir, 'outside.txt')
+  fs.writeFileSync(outside, 'keep me')
+
+  assert.equal(removeUnpacked(env, ''), false)
+  assert.equal(removeUnpacked(env, '   '), false)
+  assert.equal(removeUnpacked(env, '../escape'), true)
+  assert.equal(fs.existsSync(path.join(inboxPath(env), 'escape')), false)
+  assert.equal(fs.readFileSync(outside, 'utf8'), 'keep me', 'a name can never reach outside the inbox')
+})
+
+test('removeUnpacked of a package that was never downloaded is a no-op true', () => {
+  const env = tempEnv()
+  assert.equal(removeUnpacked(env, 'goapp-demo-word'), true)
 })
