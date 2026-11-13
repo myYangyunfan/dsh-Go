@@ -1,6 +1,6 @@
 {
   "name": "goapp-demo-word",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "示例 goapp：单词卡。界面与 dsh-go 完全不同，内核仍是 DSH 引擎。",
   "type": "module",
