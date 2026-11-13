@@ -50,6 +50,7 @@
 2. 期望：桌面快捷方式消失；管理器里仍是「已安装」。
 3. 重新打开开关：快捷方式回来，**会话还在**（禁用不清数据）。
 4. 删除该 goapp：期望它的会话一起被清掉；再点一次「导入」期望提示导入 0 个（包体已随删除一起删掉，不会被复活）；重新从商店安装时是真下载，不是本地登记。
+5. 手工装的那份也要能删干净：把同一个包解压到 `$DSH_HOME/goapps/inbox/my-word/`（目录名故意跟包名 `goapp-demo-word` 不同），导入后删除，期望 `inbox/my-word` 整个消失，「导入」提示 0 个。只按包名删的话这一步会留下目录，测试里对应「remove deletes the folder a hand-dropped package actually lives in」。
 
 ## 6. 更新
 
