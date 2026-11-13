@@ -58,6 +58,8 @@ my-goapp/
 
 **安装同时是更新**（`manager/lib/store.js:versionNewer`）：`install` 先看 inbox 里已有的那份，只在商店版本**更新**时才下载覆盖；版本相同或商店更旧则不动，不降级。比较按点分数字核心（`1.0.10 > 1.0.9`，缺位算 0），正式版压过自己的预发布（`1.0.0 > 1.0.0-beta.2`），但预发布之间不排序——那是发布方的调用，管理器不猜。更新沿用同一个 id，`registry.upsert` 保留 `enabled` 与 `sessions` 两个属于用户的字段：装新版本不会把一个被关掉的 goapp 悄悄打开，也不会丢掉删除时清会话用的 IOU 清单。下载失败时**不动**已装的那份，只在提示里说清原因——升级失败不该把应用从用户手里拿走。
 
+**删除连包体一起删**（`manager/lib/download.js:removeUnpacked`）：注册表里删掉一条之外，`$DSH_HOME/goapps/inbox/<package>` 目录也一并删除。这不是清理洁癖——`scanInbox` 读的正是这个目录，目录留着的话点一次「导入」就能把用户刚删掉的 goapp 复活；顺带也省掉最多 32 MiB 的解包内容。目录名先经 `folderFor` 清洗，`..`、绝对路径传不进 inbox 之外。
+
 ## 4. 注册表（已实现）
 
 `$DSH_HOME/goapps/registry.json`（默认 `~/.dsh/goapps/registry.json`）：
