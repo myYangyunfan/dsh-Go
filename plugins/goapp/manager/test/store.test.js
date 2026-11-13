@@ -5,7 +5,23 @@ import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 
-import { loadStore, normalizeIndex, storePath } from '../lib/store.js'
+import { loadStore, normalizeIndex, storePath, versionNewer } from '../lib/store.js'
+
+test('versionNewer reads a dotted core and never moves backwards', () => {
+  assert.equal(versionNewer('0.2.0', '0.1.0'), true)
+  assert.equal(versionNewer('0.1.0', '0.2.0'), false)
+  assert.equal(versionNewer('1.0.10', '1.0.9'), true, 'numbers, not strings')
+  assert.equal(versionNewer('1.1', '1.0.9'), true, 'a missing part counts as 0')
+  assert.equal(versionNewer('2.0.0', '2.0.0'), false)
+  assert.equal(versionNewer('2.0.0', '2.0'), false)
+  assert.equal(versionNewer('junk', 'junk'), false, 'unparsable parts are 0, so nothing looks newer')
+})
+
+test('a release supersedes its own pre-releases, never the other way round', () => {
+  assert.equal(versionNewer('1.0.0', '1.0.0-beta.2'), true)
+  assert.equal(versionNewer('1.0.0-beta.2', '1.0.0'), false)
+  assert.equal(versionNewer('1.0.0-beta.3', '1.0.0-beta.2'), false, 'pre-release order is the publisher’s call')
+})
 
 test('normalizeIndex drops entries without an id and de-duplicates', () => {
   const idx = normalizeIndex({
