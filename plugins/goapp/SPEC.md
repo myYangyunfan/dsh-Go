@@ -54,7 +54,7 @@ my-goapp/
 
 两条路都收敛为一次 **注册**：写入注册表 + 挂到 profile（`dsh plugin add` 由引擎侧完成，管理器只负责登记与呈现）。
 
-商店包的发布约定：归档是 `.tar.gz`，条目放在**归档根**（`package.json` 在顶层，不再套一层目录），文件落到 `plugins/goapp/store/<package>-<version>.tar.gz`，索引条目写它的 raw URL 与 sha256。`go单词` 就是按这个约定发布的，索引里的 URL 匿名可下载、sha256 与实际字节一致——所以商店的第一次安装是真下载，不是本地登记。仓库里现在同时存着 `goapp-demo-word-0.1.0.tar.gz` 与 `goapp-demo-word-0.2.1.tar.gz`：索引指向 0.2.1，旧包留给「安装同时是更新」这条路做真机验证（先用旧包导入，再从商店升级）。
+商店包的发布约定：归档是 `.tar.gz`，条目放在**归档根**（`package.json` 在顶层，不再套一层目录），文件落到 `plugins/goapp/store/<package>-<version>.tar.gz`，索引条目写它的 raw URL 与 sha256。`go单词` 就是按这个约定发布的，索引里的 URL 匿名可下载、sha256 与实际字节一致——所以商店的第一次安装是真下载，不是本地登记。仓库里现在同时存着 `goapp-demo-word-0.1.0.tar.gz` 与 `goapp-demo-word-0.2.2.tar.gz`：索引指向 0.2.2，旧包留给「安装同时是更新」这条路做真机验证（先用旧包导入，再从商店升级）。
 
 **打包不是手工活**（`tools/pack.mjs`）：`node plugins/goapp/tools/pack.mjs <包目录> --base-url <商店 raw 前缀> --json` 直接产出归档与索引条目。归档是**字节稳定**的——条目按路径排序、mtime 固定 0、权限 0644、gzip 头不带时间戳，所以同一份源码在任何机器上都得到同一个 sha256；不这样的话，每次换机器打包都要改索引，而索引里的 sha256 是安装时唯一的信任锚。工具同时把住清单门槛（无 `dshGoGoapp.id`、版本号不是 `x.y.z[-pre]`、缺 `package.json` 一律拒绝）与容量上限（超过 32 MiB 的安装上限直接拒绝）。`tools/test/pack.test.js` 把两件事钉成测试：已发布归档 == 由源码打出来的字节，索引 sha256 == 已发布字节——改了 `demo-word` 却忘了重打商店包，测试会红而不是等用户装到一个 sha 校验失败。发布的版本号是**不可变**的：内容变了就发新版本号，不要改同一个版本的字节——`raw.githubusercontent.com` 有分钟级缓存，同一个路径改字节会产生「索引指向新 sha、下载回来还是旧包」的窗口，用户看到的是 `Download failed: checksum`。0.2.0 就这么踩过一次，最后改名 0.2.1 重新发。
 
