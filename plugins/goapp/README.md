@@ -68,11 +68,12 @@ node plugins/goapp/tools/pack.mjs plugins/goapp/demo-word \
 node plugins/goapp/tools/pack.mjs plugins/goapp/demo-word --check <索引里的 sha256>
 ```
 
-四条约定，工具会替你把住：
+五条约定，工具会替你把住：
 
 - **归档根就是包根**：`package.json` 在顶层，不套 `goapp-xxx/` 目录——`scanInbox` 按文件夹读清单，多一层就装不上。
 - **同一份源码必须得到同一份字节**：条目按路径排序、mtime 固定为 0、权限 0644、gzip 头不带时间戳。否则两台机器打出来的 sha 不同，每次都要改索引。
 - **清单不全就不给打**：没有 `dshGoGoapp.id`、版本号不是 `x.y.z[-pre]`、缺 `package.json`，直接拒绝；超过 32 MiB（管理器的安装上限）也拒绝。
+- **写出去的包必须能打开**：`entry` 不是摆设，别让它打错字。`panel:<id>` 必须对得上本包 `dshGo.contributes.panels[].id` 里的某一项，`web` 的 `entry` 必须是包里真实存在的文件，`native` 只能写 `panel:`、`web` 只能写页面路径——否则包打得出来、装得上，只在用户点图标那一刻失败。
 - **发出去的版本号不换字节**：内容变了就升版本号。`raw.githubusercontent.com` 有分钟级缓存，同一个路径改字节会出现「索引已经指向新 sha、下载回来的还是旧包」的窗口，用户看到的是校验失败（这个坑是真踩过的：0.2.0 连同字节一起改，索引先落地、CDN 还在发旧包，只好改名成 0.2.1 重新发）。
 
 `tools/test/pack.test.js` 把「已发布的包 == 源码打出来的字节」和「索引 sha == 已发布字节」钉成测试，所以改了 `demo-word` 却忘了重打商店包，CI 会红。
