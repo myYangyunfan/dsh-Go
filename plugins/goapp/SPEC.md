@@ -60,7 +60,11 @@ my-goapp/
 
 **安装同时是更新**（`manager/lib/store.js:versionNewer`）：`install` 先看 inbox 里已有的那份，只在商店版本**更新**时才下载覆盖；版本相同或商店更旧则不动，不降级。比较按点分数字核心（`1.0.10 > 1.0.9`，缺位算 0），正式版压过自己的预发布（`1.0.0 > 1.0.0-beta.2`），但预发布之间不排序——那是发布方的调用，管理器不猜。更新沿用同一个 id，`registry.upsert` 保留 `enabled` 与 `sessions` 两个属于用户的字段：装新版本不会把一个被关掉的 goapp 悄悄打开，也不会丢掉删除时清会话用的 IOU 清单。下载失败时**不动**已装的那份，只在提示里说清原因——升级失败不该把应用从用户手里拿走。
 
-**删除连包体一起删**（`manager/lib/download.js:removeUnpacked`）：注册表里删掉一条之外，`$DSH_HOME/goapps/inbox/<package>` 目录也一并删除。这不是清理洁癖——`scanInbox` 读的正是这个目录，目录留着的话点一次「导入」就能把用户刚删掉的 goapp 复活；顺带也省掉最多 32 MiB 的解包内容。目录名先经 `folderFor` 清洗，`..`、绝对路径传不进 inbox 之外。
+**删除连包体一起删**（`manager/lib/download.js:removeUnpacked`）：注册表里删掉一条之外，它在 inbox 里的**那个目录**也一并删除——目录名用的是登记时记下的 `folder`，不是包名。这不是清理洁癖：`scanInbox` 读的正是这个目录，目录留着的话点一次「导入」就能把用户刚删掉的 goapp 复活；顺带也省掉最多 32 MiB 的解包内容。
+
+为什么记 `folder` 而不是用包名倒推：商店安装的目录名是清洗过的包名，但**手工放进 inbox 的包保留用户解压出来的目录名**（`my-word/` 里装着 `goapp-demo-word`）。只按包名删，删的是一个不存在的路径，真正的目录留着——正好回到上面那个「删了又活」的毛病。所以 `import.readPackage` 把 `path.basename(dir)` 记进注册表，`remove` 原样使用。这个字段来自磁盘、又会直接用于删除，`registry.parse` 只接受单段安全名（`[A-Za-z0-9._-]+`，且不是 `.`/`..`），其余一律丢弃并回落到 `folderFor(package)`——手改注册表写 `"../../keep"` 删不到 inbox 之外的东西（`test/goapp.test.js` 有用例钉住）。
+
+**同一个 id 被两个不同的包抢**（`registry.upsert` + `index.js:dropDisplaced`）：id 是普通单词（`word`），不是带限定名的标识，两个作者撞车是能发生的。此时按「换了一个应用」处理：`enabled`/`sessions` 这些属于用户的字段**不继承**（否则新装的那个可能一上来就是被停用状态，还背着别人的会话欠账），并且失败那一方的 inbox 目录被删除——它已经没有任何入口，留着只会被「导入」再次抢回同一个 id。
 
 ## 4. 注册表（已实现）
 
@@ -68,10 +72,12 @@ my-goapp/
 
 ```json
 { "version": 1, "goapps": [
-  { "id": "goapp-demo-word", "name": "go单词", "version": "0.1.0", "kind": "native",
+  { "id": "word", "name": "go单词", "version": "0.2.2", "package": "goapp-demo-word",
+    "folder": "goapp-demo-word", "entry": "panel:word", "kind": "native",
     "enabled": true, "installedAt": 1763000000000, "sessions": ["ses_x"] } ] }
 ```
 
+- `package` / `entry` / `folder`：跨包打开面板（`<package>/<panel id>`）、以及删除时定位 inbox 目录，都靠这三个字段；老注册表没有时按空处理，不会崩。
 - 写：临时文件 + `rename`（原子）。
 - 读：解析失败 = 空注册表，不抛异常（坏文件不会让面板变白）。
 - 实现：`plugins/goapp/manager/lib/registry.js`（`load/save/upsert/remove/setEnabled/noteSession`）。
@@ -81,7 +87,7 @@ my-goapp/
 | 动作 | 语义 | 实现位置 |
 |---|---|---|
 | 启用/停用 | 写 registry 的 `enabled`，并让管理器的「打开」直接拒绝它（toast「已停用」）。**不**改变 Host 侧插件的加载状态：协议里没有「让 A 插件停用 B 插件」的能力，真停用要去 App 的插件开关（设置 › 插件）。管理器的开关管的是「这个商店/管理器还推不推它」，不是「引擎还加不加载它」 | `setEnabled` + `open` |
-| 删除 | 从注册表移除 + 丢弃 `sessions` 记录 | `remove`，面板 action `remove` |
+| 删除 | 从注册表移除 + 丢弃 `sessions` 记录 + 删掉登记的 inbox 目录 | `remove`，面板 action `remove` |
 | 打开 | 渲染该 goapp 的入口 | 面板 action `open`（当前只提示） |
 
 **⛔ 未实现**：删除时真正删除会话本体。需要 `packages/dsh_client` 的删除 API 或桥接的会话删除路由；注册表目前只是「欠账清单」，先保证不丢账。
