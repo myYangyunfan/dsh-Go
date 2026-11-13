@@ -144,6 +144,14 @@ test('the committed demo artifact matches the demo sources', () => {
   assert.equal(listing.package, manifest.name)
 })
 
+test('the demo panel shows the version it is packaged as', () => {
+  const source = fs.readFileSync(path.join(DEMO, 'lib', 'index.js'), 'utf8')
+  const shown = /const VERSION = '([^']+)'/.exec(source)
+  assert.ok(shown, 'the panel prints a version so a device check can tell builds apart')
+  const { manifest } = packDirectory(DEMO)
+  assert.equal(shown[1], manifest.version, 'VERSION and package.json version must agree')
+})
+
 test('the install cap is not exceeded by a normal package', () => {
   const dir = fixture(baseManifest, { 'lib/index.js': 'x\n' })
   assert.ok(packDirectory(dir).buffer.length < MAX_BYTES)
