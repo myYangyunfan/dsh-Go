@@ -21,6 +21,13 @@ export function empty() {
   return { version: VERSION, goapps: [] }
 }
 
+/** A stored inbox folder is used verbatim on delete, so it must be one plain segment. */
+function safeFolder(value) {
+  if (typeof value !== 'string') return ''
+  if (!/^[A-Za-z0-9._-]+$/.test(value)) return ''
+  return value === '.' || value === '..' ? '' : value
+}
+
 /** Parse a registry file's text; anything unreadable or unexpected becomes empty. */
 export function parse(text) {
   let raw
@@ -37,6 +44,7 @@ export function parse(text) {
       name: typeof g.name === 'string' && g.name !== '' ? g.name : g.id,
       version: typeof g.version === 'string' ? g.version : '0.0.0',
       package: typeof g.package === 'string' ? g.package : '',
+      folder: safeFolder(g.folder),
       entry: typeof g.entry === 'string' ? g.entry : '',
       kind: g.kind === 'web' ? 'web' : 'native',
       enabled: g.enabled !== false,
@@ -68,14 +76,22 @@ export function save(registry, env = process.env) {
  * belong to the user rather than to the package: `enabled` (installing a new
  * version must not silently turn a goapp back on) and `sessions` (the removal
  * IOU list, which the store download cannot know).
+ *
+ * Those fields are only inherited when the package behind the id is the same
+ * one. Two different packages can declare the same id — ids are plain words
+ * like `word`, not qualified names — and carrying the old flag and session list
+ * over would hand one app the other one's state.
  */
 export function upsert(registry, entry) {
   const previous = registry.goapps.find((g) => g.id === entry.id)
   const rest = registry.goapps.filter((g) => g.id !== entry.id)
-  const merged =
-    previous === undefined
+  const samePackage =
+    previous === undefined || previous.package === '' || entry.package === '' || previous.package === entry.package
+  const merged = samePackage
+    ? previous === undefined
       ? entry
       : { ...entry, enabled: previous.enabled, sessions: previous.sessions }
+    : entry
   return { ...registry, goapps: [merged, ...rest] }
 }
 
