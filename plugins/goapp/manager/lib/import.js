@@ -55,23 +55,107 @@ export function readPackage(dir, now = Date.now()) {
   }
 }
 
+/** The identity two inbox folders share: the package name, else the goapp id. */
+function keyOf(entry) {
+  return entry.package !== '' ? entry.package : entry.id
+}
+
+/** Folder mtime, or 0 when it cannot be read. */
+function mtimeOf(dir) {
+  try {
+    return fs.statSync(dir).mtimeMs
+  } catch {
+    return 0
+  }
+}
+
 /**
- * Every goapp package waiting in the inbox, newest folder first. Unreadable
- * folders are skipped rather than failing the whole import.
+ * Every goapp package waiting in the inbox, with folders carrying the same
+ * package folded onto one entry, newest folder first.
+ *
+ * The same package can sit in the inbox twice — a store download under its
+ * package name plus a hand-unzipped copy, or two unzips of the same archive.
+ * Without folding, `scanInbox(...).find(id)` picks whichever folder the
+ * filesystem lists first, so install/import flip between two copies and a
+ * removal deletes only one of them, leaving the other for 导入 to resurrect.
+ *
+ * OLDEST WINS NOTHING: the newest folder (mtime, then name) represents the
+ * package. Losers are counted, not deleted — they may be a build the user
+ * unpacked by hand, and deleting files the user put there is not this
+ * function's call. `remove` deletes every folder of the package afterwards, so
+ * nothing survives to come back.
+ *
+ * @returns {{ entries: any[], duplicates: number }} `duplicates` counts the
+ * folders that lost, so the import toast can say how many were ignored.
  */
-export function scanInbox(env = process.env, now = Date.now()) {
+export function scanInboxDetailed(env = process.env, now = Date.now()) {
   const inbox = inboxPath(env)
   let names
   try {
     names = fs.readdirSync(inbox, { withFileTypes: true })
   } catch {
-    return []
+    return { entries: [], duplicates: 0 }
   }
-  const out = []
+  const found = []
   for (const e of names) {
     if (!e.isDirectory()) continue
-    const entry = readPackage(path.join(inbox, e.name), now)
-    if (entry !== null) out.push(entry)
+    const dir = path.join(inbox, e.name)
+    const entry = readPackage(dir, now)
+    if (entry !== null) found.push({ entry, at: mtimeOf(dir) })
   }
+  // Deterministic before folding: newest first, then folder name, so a tie
+  // resolves the same way on every platform and every scan.
+  found.sort((a, b) => b.at - a.at || a.entry.folder.localeCompare(b.entry.folder))
+  const byPackage = new Map()
+  let duplicates = 0
+  for (const { entry } of found) {
+    const key = keyOf(entry)
+    if (byPackage.has(key)) {
+      duplicates += 1
+      continue
+    }
+    byPackage.set(key, entry)
+  }
+  // Two different packages can still declare the same id (ids are plain words).
+  // Keep the newest of those too, so `find(id)` is never ambiguous.
+  const byId = new Map()
+  for (const entry of byPackage.values()) {
+    if (byId.has(entry.id)) {
+      duplicates += 1
+      continue
+    }
+    byId.set(entry.id, entry)
+  }
+  return { entries: [...byId.values()], duplicates }
+}
+
+/** Every goapp package waiting in the inbox, one entry per package. */
+export function scanInbox(env = process.env, now = Date.now()) {
+  return scanInboxDetailed(env, now).entries
+}
+
+/**
+ * Every folder in the inbox that belongs to `entry`, its own included: the same
+ * package, or a different package claiming the same goapp id. Deletion uses
+ * this instead of the single recorded folder — a twin left behind is exactly
+ * what makes a removed goapp come back on the next 导入, and an id is what the
+ * registry (and the user) calls the goapp.
+ */
+export function inboxFoldersFor(entry, env = process.env) {
+  const inbox = inboxPath(env)
+  const key = keyOf(entry)
+  const out = []
+  let names
+  try {
+    names = fs.readdirSync(inbox, { withFileTypes: true })
+  } catch {
+    return entry.folder === '' ? out : [entry.folder]
+  }
+  for (const e of names) {
+    if (!e.isDirectory()) continue
+    const found = readPackage(path.join(inbox, e.name))
+    if (found !== null && (found.id === entry.id || keyOf(found) === key)) out.push(e.name)
+  }
+  if (out.length === 0 && entry.folder !== '') out.push(entry.folder)
   return out
 }
