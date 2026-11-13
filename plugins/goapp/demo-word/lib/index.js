@@ -1,11 +1,18 @@
 // goapp-demo-word：一个最小 goapp。自带界面与自己的状态，只借 DSH 引擎跑逻辑；
 // 它不注册聊天位置，所以能和 dsh-go 的聊天界面完全无关。
+//
+// VERSION 必须和 package.json 的 version 一致（tools/test/pack.test.js 会比对）：
+// 面板上那行 `v0.2.2 · 7` 是真机验证「商店升级」时唯一能看出跑的是哪一版的标记。
+const VERSION = '0.2.2'
+
 const DECK = [
   { word: 'ephemeral', meaning: '短暂的；朝生暮死的', note: 'ephemeral fame' },
   { word: 'serendipity', meaning: '意外发现珍奇事物的运气', note: 'a serendipity moment' },
   { word: 'ubiquitous', meaning: '无处不在的', note: 'ubiquitous computing' },
   { word: 'candid', meaning: '坦率的；直言的', note: 'a candid answer' },
   { word: 'resilient', meaning: '有韧性的；能恢复的', note: 'a resilient system' },
+  { word: 'meticulous', meaning: '一丝不苟的；极仔细的', note: 'meticulous notes' },
+  { word: 'pragmatic', meaning: '务实的；讲求实际的', note: 'a pragmatic choice' },
 ]
 
 const WORDS = {
@@ -45,6 +52,7 @@ export function apply(ctx) {
             { type: 'callout', text: { $: 'data.meaning' }, tone: 'info' },
             { type: 'text', text: { $: 'data.note' }, tone: 'muted' },
             { type: 'text', text: w.tip, tone: 'muted' },
+            { type: 'text', text: `v${VERSION} · ${DECK.length}`, tone: 'muted' },
             {
               type: 'actions',
               items: [
