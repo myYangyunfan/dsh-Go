@@ -37,13 +37,29 @@ export function readPackage(dir, now = Date.now()) {
       : typeof pkg.name === 'string'
         ? pkg.name
         : id
+  const kind = goapp.kind === 'web' ? 'web' : 'native'
+  const entry = typeof goapp.entry === 'string' ? goapp.entry : ''
+  // Does tapping the icon land anywhere? A `panel:<id>` has to name a panel this
+  // package declares, and a web entry has to be a file that was unpacked with it.
+  // The pack tool refuses such a package at publish time; a hand-unzipped import
+  // has no such gate, and the manager would otherwise offer an icon that opens
+  // nothing and says nothing.
+  const declaredPanels = Array.isArray(pkg?.dshGo?.contributes?.panels)
+    ? pkg.dshGo.contributes.panels.map((panel) => panel?.id).filter((panelId) => typeof panelId === 'string')
+    : []
+  const entryOk = entry === ''
+    ? false
+    : entry.startsWith('panel:')
+      ? kind === 'native' && declaredPanels.includes(entry.slice('panel:'.length))
+      : kind === 'web' && fs.existsSync(path.join(dir, entry))
   return {
     id,
     name,
     version: typeof pkg.version === 'string' ? pkg.version : '0.0.0',
     package: typeof pkg.name === 'string' ? pkg.name : '',
-    kind: goapp.kind === 'web' ? 'web' : 'native',
-    entry: typeof goapp.entry === 'string' ? goapp.entry : '',
+    kind,
+    entry,
+    entryOk,
     dir,
     // The folder name, not the package name: a package dropped in by hand keeps
     // whatever folder the user unzipped it into, and removal has to delete that
