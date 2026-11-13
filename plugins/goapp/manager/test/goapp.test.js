@@ -208,3 +208,29 @@ test('remove of an entry with no files on disk still succeeds', () => {
   assert.equal(load(env).goapps.length, 0)
   assert.equal(effects.length, 2)
 })
+
+test('open refuses a goapp the manager was told to stop offering', () => {
+  const env = tempEnv()
+  save(
+    upsert(empty(), {
+      id: 'word',
+      name: '词',
+      version: '0.2.0',
+      package: 'goapp-demo-word',
+      kind: 'native',
+      entry: 'panel:word',
+      enabled: false,
+      installedAt: 1,
+      sessions: [],
+    }),
+    env,
+  )
+  const { ctx, panels } = fakeCtx()
+  apply(ctx, { env })
+
+  const effects = panels.goapps.actions.open(null, { id: 'word', locale: 'zh' })
+
+  assert.equal(effects.length, 1, 'no open effect while stopped')
+  assert.equal(effects[0].type, 'toast')
+  assert.match(effects[0].text, /已停用/)
+})
