@@ -78,6 +78,20 @@ node plugins/goapp/tools/pack.mjs plugins/goapp/demo-word --check <索引里的 
 
 `tools/test/pack.test.js` 把「已发布的包 == 源码打出来的字节」和「索引 sha == 已发布字节」钉成测试，所以改了 `demo-word` 却忘了重打商店包，CI 会红。
 
+## 一条命令验完
+
+```bash
+node plugins/goapp/tools/verify.mjs
+```
+
+依次跑管理器测试、打包测试、`sdk/plugin-kit` 对两个插件的 `--load` 校验，最后一行是 `all 4 steps passed` 或失败清单；任一步红了退出码就是 1，适合挂到任何 CI 上。这个 fork 的 GitHub Actions 目前是停的，所以「记得跑哪四条命令」不是流程，这条命令才是。
+
+只在本地放了 `plugins/goapp`、没有整仓的情况下，用 `--check` 指到另一份 checkout 的校验器：
+
+```bash
+node plugins/goapp/tools/verify.mjs --check ../dsh-Go/sdk/plugin-kit/bin/check.mjs
+```
+
 ## 从 App 外直达一个 goapp
 
 ```
