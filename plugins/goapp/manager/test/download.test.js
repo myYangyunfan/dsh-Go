@@ -126,6 +126,28 @@ test('download unpacks the package into the inbox', async () => {
   assert.equal(fs.readFileSync(path.join(got.dir, 'lib', 'view.js'), 'utf8'), 'export const view = 1')
 })
 
+test('unpackTarGz leaves no staging folder behind', async () => {
+  const env = tempEnv()
+  const payload = tarGz({ 'package.json': MANIFEST })
+  const got = await download(listing(payload), env, { fetchImpl: stubFetch(payload) })
+  assert.equal(got.ok, true)
+  assert.equal(fs.existsSync(path.join(inboxPath(env), '.tmp')), false, 'the staging folder is emptied')
+  assert.deepEqual(fs.readdirSync(inboxPath(env)), ['goapp-demo-word'])
+})
+
+test('a half-written package in the staging folder is not an inbox entry', () => {
+  const env = tempEnv()
+  const leftover = path.join(inboxPath(env), '.tmp', 'goapp-demo-word')
+  fs.mkdirSync(leftover, { recursive: true })
+  fs.writeFileSync(path.join(leftover, 'package.json'), MANIFEST)
+  assert.deepEqual(scanInbox(env), [], 'a dot folder can never be read as a package')
+  // and the next download clears it
+  const payload = tarGz({ 'package.json': MANIFEST })
+  const got = unpackTarGz(payload, 'goapp-demo-word', env)
+  assert.equal(got.ok, true)
+  assert.equal(fs.existsSync(leftover), false)
+})
+
 test('unpackTarGz rejects a path that climbs out of the inbox', () => {
   const env = tempEnv()
   const payload = tarGz({ '../escape.txt': 'nope' })
