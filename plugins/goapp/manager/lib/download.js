@@ -98,13 +98,20 @@ export function folderFor(listing) {
  * Delete one unpacked package from the inbox. Removing a goapp has to take its
  * files with it: that folder is exactly what `scanInbox` reads, so leaving it
  * behind lets 导入 resurrect a goapp the user just deleted — and up to 32 MiB of
- * unpacked UI stays on disk. The name is sanitized by `folderFor`, so it can
- * never leave the inbox.
+ * unpacked UI stays on disk.
+ *
+ * `folder` is the directory recorded when the package was imported. It is used
+ * only when it is a single plain segment: a hand-dropped package keeps whatever
+ * folder the user unzipped it into, so the package name is not the folder name.
+ * Anything else falls back to the sanitized package name, which can never leave
+ * the inbox.
  */
-export function removeUnpacked(env, name) {
+export function removeUnpacked(env, name, folder = '') {
+  const stored = typeof folder === 'string' ? folder.trim() : ''
+  const usable = /^[A-Za-z0-9._-]+$/.test(stored) && stored !== '.' && stored !== '..'
   const raw = typeof name === 'string' ? name.trim() : ''
-  if (raw === '') return false
-  const dir = path.join(inboxPath(env), folderFor({ package: raw }))
+  if (!usable && raw === '') return false
+  const dir = path.join(inboxPath(env), usable ? stored : folderFor({ package: raw }))
   try {
     fs.rmSync(dir, { recursive: true, force: true })
     return true
