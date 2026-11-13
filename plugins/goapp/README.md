@@ -53,7 +53,7 @@ dsh plugin --profile web add <仓库路径>/plugins/goapp/demo-word
 
 桌面端只能验证到「逻辑对」这一层：快捷方式、深链、PRoot 启动都必须在真机上过一遍。照 [DEVICE-CHECK.md](DEVICE-CHECK.md) 走一遍，把表头和结果随 PR 一起贴出来——`CONTRIBUTING.md` 要求的 ABI / Android 版本 / 启动方式 / 机型缺一项，结论就不可复现。
 
-商店里的 `go单词` 指向 `plugins/goapp/store/goapp-demo-word-0.2.1.tar.gz`（raw URL + sha256 写在 `manager/data/index.json`），点「安装」会真下载、校验、解包进 `$DSH_HOME/goapps/inbox/` 再登记——不需要先手动放包。`0.1.0` 那个包留在仓库里，用来走「先装旧版、再从商店升级」这条真机路径。
+商店里的 `go单词` 指向 `plugins/goapp/store/goapp-demo-word-0.2.2.tar.gz`（raw URL + sha256 写在 `manager/data/index.json`），点「安装」会真下载、校验、解包进 `$DSH_HOME/goapps/inbox/` 再登记——不需要先手动放包。`0.1.0` 那个包留在仓库里，用来走「先装旧版、再从商店升级」这条真机路径。
 
 ## 发布一个 goapp
 
