@@ -51,6 +51,13 @@ const MANIFEST = JSON.stringify({
   dshGoGoapp: { id: 'word', kind: 'native', entry: 'panel:word' },
 })
 
+const MANIFEST_V2 = JSON.stringify({
+  name: 'goapp-demo-word',
+  version: '0.2.0',
+  dshGo: { title: '单词' },
+  dshGoGoapp: { id: 'word', kind: 'native', entry: 'panel:word' },
+})
+
 function listing(payload, extra = {}) {
   return {
     id: 'word',
@@ -210,4 +217,62 @@ test('install of an unknown id downloads nothing', async () => {
   assert.equal(effects.length, 1)
   assert.equal(effects[0].type, 'toast')
   assert.equal(fs.existsSync(path.join(env.dir, 'goapps')), false)
+})
+
+test('install updates an older copy in place and keeps enabled/sessions', async () => {
+  const env = tempEnv()
+  const first = tarGz({ 'package.json': MANIFEST })
+  assert.equal((await download(listing(first), env, { fetchImpl: stubFetch(first) })).ok, true)
+  save(upsert(empty(), { ...scanInbox(env)[0], enabled: false, sessions: ['s1'] }), env)
+
+  const next = tarGz({ 'package.json': MANIFEST_V2, 'lib/view.js': 'v2' })
+  writeStore(env, [listing(next, { version: '0.2.0' })])
+  const { ctx, panels } = fakeCtx()
+  apply(ctx, { env, fetch: stubFetch(next) })
+  const effects = await panels.goapps.actions.install(null, { id: 'word', locale: 'zh' })
+
+  assert.match(effects[0].text, /^已更新/)
+  const entry = load(env).goapps[0]
+  assert.equal(entry.version, '0.2.0')
+  assert.equal(entry.enabled, false)
+  assert.deepEqual(entry.sessions, ['s1'])
+  assert.equal(fs.readFileSync(path.join(inboxPath(env), 'goapp-demo-word', 'lib', 'view.js'), 'utf8'), 'v2')
+})
+
+test('install does not downgrade a newer local copy', async () => {
+  const env = tempEnv()
+  const newer = tarGz({ 'package.json': MANIFEST_V2 })
+  assert.equal((await download(listing(newer, { version: '0.2.0' }), env, { fetchImpl: stubFetch(newer) })).ok, true)
+  writeStore(env, [listing(tarGz({ 'package.json': MANIFEST }), { version: '0.1.0' })])
+
+  let calls = 0
+  const { ctx, panels } = fakeCtx()
+  apply(ctx, {
+    env,
+    fetch: async () => {
+      calls += 1
+      throw new Error('must not fetch')
+    },
+  })
+  await panels.goapps.actions.install(null, { id: 'word', locale: 'zh' })
+
+  assert.equal(calls, 0)
+  assert.equal(load(env).goapps[0].version, '0.2.0')
+})
+
+test('a failed update keeps the installed copy', async () => {
+  const env = tempEnv()
+  const first = tarGz({ 'package.json': MANIFEST })
+  assert.equal((await download(listing(first), env, { fetchImpl: stubFetch(first) })).ok, true)
+  save(upsert(empty(), scanInbox(env)[0]), env)
+
+  const next = tarGz({ 'package.json': MANIFEST_V2 })
+  writeStore(env, [listing(next, { version: '0.2.0' })])
+  const { ctx, panels } = fakeCtx()
+  apply(ctx, { env, fetch: stubFetch(tarGz({ 'package.json': '{}' })) })
+  const effects = await panels.goapps.actions.install(null, { id: 'word', locale: 'en' })
+
+  assert.match(effects[0].text, /Download failed: checksum/)
+  assert.equal(load(env).goapps[0].version, '0.1.0')
+  assert.equal(fs.existsSync(path.join(inboxPath(env), 'goapp-demo-word', 'package.json')), true)
 })
