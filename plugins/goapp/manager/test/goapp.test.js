@@ -165,3 +165,46 @@ test('scanInbox skips files and non-goapp folders', () => {
   const found = scanInbox(env, 7)
   assert.deepEqual(found.map((f) => f.id), ['one'])
 })
+
+test('remove deletes the unpacked package, so 导入 cannot bring it back', () => {
+  const env = tempEnv()
+  const pkgDir = path.join(inboxPath(env), 'goapp-demo-word')
+  fs.mkdirSync(pkgDir, { recursive: true })
+  fs.writeFileSync(
+    path.join(pkgDir, 'package.json'),
+    JSON.stringify({ name: 'goapp-demo-word', version: '0.2.0', dshGoGoapp: { id: 'word', kind: 'native', entry: 'panel:word' } }),
+  )
+  save(
+    upsert(empty(), {
+      id: 'word',
+      name: '词',
+      version: '0.2.0',
+      package: 'goapp-demo-word',
+      kind: 'native',
+      entry: 'panel:word',
+      enabled: true,
+      installedAt: 1,
+      sessions: ['s1'],
+    }),
+    env,
+  )
+  const { ctx, panels } = fakeCtx()
+  apply(ctx, { env })
+
+  const effects = panels.goapps.actions.remove(null, { id: 'word', locale: 'zh' })
+
+  assert.equal(fs.existsSync(pkgDir), false, 'the unpacked folder has to go with it')
+  assert.equal(load(env).goapps.length, 0)
+  assert.match(effects[0].text, /1\)$/)
+  assert.match(panels.goapps.actions.import(null, { locale: 'zh' })[0].text, /0$/, 'no package left for 导入 to find')
+})
+
+test('remove of an entry with no files on disk still succeeds', () => {
+  const env = tempEnv()
+  save(upsert(empty(), { id: 'ghost', name: 'Ghost', version: '1', kind: 'native', enabled: true, installedAt: 1, sessions: [] }), env)
+  const { ctx, panels } = fakeCtx()
+  apply(ctx, { env })
+  const effects = panels.goapps.actions.remove(null, { id: 'ghost', locale: 'zh' })
+  assert.equal(load(env).goapps.length, 0)
+  assert.equal(effects.length, 2)
+})
