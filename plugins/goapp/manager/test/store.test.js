@@ -5,7 +5,21 @@ import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 
+import { goappData } from '../lib/view.js'
 import { loadStore, normalizeIndex, storePath, versionNewer } from '../lib/store.js'
+
+test('the store lists an installed goapp only when a newer version exists', () => {
+  const registry = { goapps: [{ id: 'word', name: '单词', version: '0.1.0', enabled: true, sessions: [] }] }
+  const row = (version) => ({ goapps: [{ id: 'word', name: '单词', version, summary: 's', url: '', sha256: '' }] })
+
+  assert.deepEqual(goappData(registry, row('0.1.0')).store, [], 'same version: no row to tap')
+  assert.deepEqual(goappData(registry, row('0.0.9')).store, [], 'never offer a downgrade')
+
+  const update = goappData(registry, row('0.2.0')).store[0]
+  assert.equal(update.subtitle, '0.1.0 → 0.2.0')
+  assert.equal(update.icon, 'refresh')
+  assert.deepEqual(update.action, { id: 'install', args: { id: 'word' } })
+})
 
 test('versionNewer reads a dotted core and never moves backwards', () => {
   assert.equal(versionNewer('0.2.0', '0.1.0'), true)
