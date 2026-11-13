@@ -76,7 +76,11 @@ export function apply(ctx, options = {}) {
           const w = words(event?.locale)
           const id = idOf(event)
           if (id === '') return []
-          const target = panelRef(read().goapps.find((g) => g.id === id))
+          const current = read().goapps.find((g) => g.id === id)
+          if (current !== undefined && current.enabled === false) {
+            return [{ type: 'toast', text: `${w.disabled}: ${current.name}` }]
+          }
+          const target = panelRef(current)
           if (target === null) {
             return [
               { type: 'toast', text: `${w.opening}: ${id}` },
