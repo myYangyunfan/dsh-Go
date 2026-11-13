@@ -123,6 +123,11 @@ export function apply(ctx, options = {}) {
           if (current.enabled === false) {
             return [{ type: 'toast', text: `${w.disabled}: ${current.name}` }]
           }
+          // A hand-unzipped package can name a panel it does not declare, or a page
+          // it does not ship. Say that instead of opening an empty screen.
+          if (current.entryOk === false) {
+            return [{ type: 'toast', text: `${w.brokenEntry}: ${current.name}` }]
+          }
           const target = panelRef(current)
           if (target === null) {
             return [
