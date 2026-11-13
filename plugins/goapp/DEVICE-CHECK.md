@@ -51,6 +51,8 @@
 3. 重新打开开关：快捷方式回来，**会话还在**（禁用不清数据）。
 4. 删除该 goapp：期望它的会话一起被清掉；再点一次「导入」期望提示导入 0 个（包体已随删除一起删掉，不会被复活）；重新从商店安装时是真下载，不是本地登记。
 5. 手工装的那份也要能删干净：把同一个包解压到 `$DSH_HOME/goapps/inbox/my-word/`（目录名故意跟包名 `goapp-demo-word` 不同），导入后删除，期望 `inbox/my-word` 整个消失，「导入」提示 0 个。只按包名删的话这一步会留下目录，测试里对应「remove deletes the folder a hand-dropped package actually lives in」。
+6. 两份同包也别互相顶：再解压一份到 `inbox/second-word/`（同样是 `goapp-demo-word`），点「导入」期望提示「已导入 1（跳过重复 1）」，管理器里只多出一条；删除该 goapp 时期望两个目录**都**消失，再点「导入」提示 0 个。对应测试「two folders holding the same package are one goapp」「remove deletes every folder of the package」。
+7. 写不进去要说清楚：把 `$DSH_HOME/goapps/registry.json.tmp` 建成一个目录（`mkdir`），再点开关，期望 toast 写「保存失败: EISDIR — go单词」而不是面板报错；删掉那个目录后开关恢复正常。对应测试「a registry that cannot be written answers with a toast」。
 
 ## 6. 更新
 
